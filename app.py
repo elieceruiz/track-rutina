@@ -1,6 +1,12 @@
 import streamlit as st
 from datetime import datetime, timedelta
 from pymongo import MongoClient
+from zoneinfo import ZoneInfo
+
+# -------------------------------
+# Configurar zona horaria de Colombia
+# -------------------------------
+ZONA = ZoneInfo("America/Bogota")
 
 # -------------------------------
 # Conexión a MongoDB Atlas
@@ -43,19 +49,19 @@ if not st.session_state.cronometro_activo:
     tipo = st.selectbox("Selecciona tipo de comida para iniciar cronómetro:", ["--", "Desayuno", "Almuerzo", "Cena", "Snack", "Break"])
     
     if tipo != "--":
-        st.session_state.inicio = datetime.now()
+        st.session_state.inicio = datetime.now(ZONA)
         st.session_state.tipo_comida = tipo
         st.session_state.cronometro_activo = True
         st.success(f"{tipo} iniciado a las {st.session_state.inicio.strftime('%H:%M:%S')}")
 
 if st.session_state.cronometro_activo:
-    tiempo_transcurrido = datetime.now() - st.session_state.inicio
+    tiempo_transcurrido = datetime.now(ZONA) - st.session_state.inicio
     minutos, segundos = divmod(tiempo_transcurrido.seconds, 60)
     horas, minutos = divmod(minutos, 60)
     st.markdown(f"⏱️ **Tiempo transcurrido:** {horas:02d}:{minutos:02d}:{segundos:02d}")
     
     if st.button("Finalizar comida"):
-        fin = datetime.now()
+        fin = datetime.now(ZONA)
         duracion = (fin - st.session_state.inicio).total_seconds() / 60
 
         evento = {
@@ -88,9 +94,9 @@ hora_acostarse = st.time_input("¿A qué hora te acostaste?", key="hora_acostars
 hora_levantarse = st.time_input("¿A qué hora te levantaste?", key="hora_levantarse")
 
 if st.button("Guardar sueño"):
-    hoy = datetime.today()
-    t1 = datetime.combine(hoy, hora_acostarse)
-    t2 = datetime.combine(hoy, hora_levantarse)
+    hoy = datetime.now(ZONA)
+    t1 = datetime.combine(hoy.date(), hora_acostarse).replace(tzinfo=ZONA)
+    t2 = datetime.combine(hoy.date(), hora_levantarse).replace(tzinfo=ZONA)
     if t2 < t1:
         t2 += timedelta(days=1)
 
@@ -121,10 +127,10 @@ hora_llegada = st.time_input("¿A qué hora llegaste al trabajo?", key="llegada"
 hora_esperada = st.time_input("¿A qué hora debes estar allá normalmente?", value=datetime.strptime("07:00", "%H:%M").time(), key="esperada")
 
 if st.button("Registrar llegada"):
-    hoy = datetime.today()
-    t_salida = datetime.combine(hoy, hora_salida)
-    t_llegada = datetime.combine(hoy, hora_llegada)
-    t_esperada = datetime.combine(hoy, hora_esperada)
+    hoy = datetime.now(ZONA)
+    t_salida = datetime.combine(hoy.date(), hora_salida).replace(tzinfo=ZONA)
+    t_llegada = datetime.combine(hoy.date(), hora_llegada).replace(tzinfo=ZONA)
+    t_esperada = datetime.combine(hoy.date(), hora_esperada).replace(tzinfo=ZONA)
 
     puntual = t_llegada <= t_esperada
     diferencia = (t_llegada - t_esperada).total_seconds() / 60
@@ -155,8 +161,8 @@ st.header("📵 Abstinencia de YouTube")
 
 if st.checkbox("Tuve ganas de entrar a YouTube y me abstuve"):
     evento = {
-        "fecha": datetime.now().strftime('%Y-%m-%d'),
-        "hora": datetime.now().strftime('%H:%M:%S'),
+        "fecha": datetime.now(ZONA).strftime('%Y-%m-%d'),
+        "hora": datetime.now(ZONA).strftime('%H:%M:%S'),
         "mensaje": "Abstinencia registrada"
     }
     col_youtube.insert_one(evento)

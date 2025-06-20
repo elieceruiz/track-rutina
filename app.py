@@ -2,6 +2,7 @@ import streamlit as st
 from datetime import datetime, timedelta
 from pymongo import MongoClient
 from zoneinfo import ZoneInfo
+from streamlit_autorefresh import st_autorefresh
 
 # -------------------------------
 # Configurar zona horaria de Colombia
@@ -29,6 +30,10 @@ if 'registro_comidas' not in st.session_state:
     st.session_state.registro_comidas = []
 if 'cronometro_activo' not in st.session_state:
     st.session_state.cronometro_activo = False
+if 'registro_sueno' not in st.session_state:
+    st.session_state.registro_sueno = {}
+if 'registro_trabajo' not in st.session_state:
+    st.session_state.registro_trabajo = {}
 
 # -------------------------------
 # Título principal
@@ -43,6 +48,7 @@ st.header("🍽️ Comidas con cronómetro")
 
 if not st.session_state.cronometro_activo:
     tipo = st.selectbox("Selecciona tipo de comida para iniciar cronómetro:", ["--", "Desayuno", "Almuerzo", "Cena", "Snack", "Break"])
+    
     if tipo != "--":
         st.session_state.inicio = datetime.now(ZONA)
         st.session_state.tipo_comida = tipo
@@ -50,6 +56,8 @@ if not st.session_state.cronometro_activo:
         st.success(f"{tipo} iniciado a las {st.session_state.inicio.strftime('%H:%M:%S')}")
 
 if st.session_state.cronometro_activo:
+    st_autorefresh(interval=1000, key="cronometro_refresh")
+
     tiempo_transcurrido = datetime.now(ZONA) - st.session_state.inicio
     minutos, segundos = divmod(tiempo_transcurrido.seconds, 60)
     horas, minutos = divmod(minutos, 60)
@@ -76,6 +84,10 @@ if st.session_state.cronometro_activo:
         st.session_state.tipo_comida = None
         st.session_state.cronometro_activo = False
 
+if st.session_state.registro_comidas:
+    st.subheader("📋 Historial de comidas de hoy (sesión)")
+    st.table(st.session_state.registro_comidas)
+
 # -------------------------------
 # Sección 2: Registro de sueño
 # -------------------------------
@@ -92,14 +104,14 @@ if st.button("Guardar sueño"):
         t2 += timedelta(days=1)
 
     horas_dormidas = (t2 - t1).total_seconds() / 3600
-    registro_sueno = {
+    st.session_state.registro_sueno = {
         "acostarse": hora_acostarse.strftime('%H:%M'),
         "levantarse": hora_levantarse.strftime('%H:%M'),
         "duracion_horas": round(horas_dormidas, 2),
         "fecha": hoy.strftime('%Y-%m-%d')
     }
 
-    col_sueno.insert_one(registro_sueno)
+    col_sueno.insert_one(st.session_state.registro_sueno)
 
     color = "🟢" if horas_dormidas >= 6 else "🔴"
     st.success(f"{color} Dormiste {horas_dormidas:.1f} horas")
@@ -121,7 +133,7 @@ if st.button("Registrar llegada"):
 
     puntual = t_llegada <= t_esperada
     diferencia = (t_llegada - t_esperada).total_seconds() / 60
-    registro_trabajo = {
+    st.session_state.registro_trabajo = {
         "salida": hora_salida.strftime('%H:%M'),
         "llegada": hora_llegada.strftime('%H:%M'),
         "esperada": hora_esperada.strftime('%H:%M'),
@@ -130,7 +142,7 @@ if st.button("Registrar llegada"):
         "fecha": hoy.strftime('%Y-%m-%d')
     }
 
-    col_trabajo.insert_one(registro_trabajo)
+    col_trabajo.insert_one(st.session_state.registro_trabajo)
 
     if puntual:
         st.success("🟢 ¡Llegaste a tiempo!")

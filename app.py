@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 from pymongo import MongoClient
 from zoneinfo import ZoneInfo
 
-# Zona horaria de Colombia
 ZONA = ZoneInfo("America/Bogota")
 
 # -------------------------------
@@ -56,7 +55,6 @@ if st.session_state.cronometro_activo:
     if st.button("Finalizar comida"):
         fin = datetime.now(ZONA)
         duracion = (fin - st.session_state.inicio).total_seconds() / 60
-
         evento = {
             "tipo": st.session_state.tipo_comida,
             "inicio": st.session_state.inicio.strftime('%H:%M:%S'),
@@ -64,10 +62,8 @@ if st.session_state.cronometro_activo:
             "duracion_min": round(duracion, 1),
             "fecha": fin.strftime('%Y-%m-%d')
         }
-
         st.session_state.registro_comidas.append(evento)
         col_comidas.insert_one(evento)
-
         st.success(f"{evento['tipo']} finalizado a las {evento['fin']} - Duración: {evento['duracion_min']} minutos")
 
         st.session_state.inicio = None
@@ -91,7 +87,6 @@ hora_levantarse = None
 
 if acostarse_op == "Sí":
     hora_acostarse = st.time_input("¿A qué hora te acostaste?", key="hora_acostarse")
-
 if levantarse_op == "Sí":
     hora_levantarse = st.time_input("¿A qué hora te levantaste?", key="hora_levantarse")
 
@@ -110,7 +105,6 @@ if hora_acostarse and hora_levantarse and st.button("Guardar sueño"):
         "fecha": hoy.strftime('%Y-%m-%d')
     }
     col_sueno.insert_one(registro_sueno)
-
     color = "🟢" if horas_dormidas >= 6 else "🔴"
     st.success(f"{color} Dormiste {horas_dormidas:.1f} horas")
 
@@ -127,7 +121,6 @@ hora_llegada = None
 
 if salida_op == "Sí":
     hora_salida = st.time_input("¿A qué hora saliste de casa?", key="salida")
-
 if llegada_op == "Sí":
     hora_llegada = st.time_input("¿A qué hora llegaste al trabajo?", key="llegada")
 
@@ -171,23 +164,35 @@ if st.checkbox("Tuve ganas de entrar a YouTube y me abstuve"):
     st.success(f"✅ Registrado: {evento['fecha']} a las {evento['hora']}")
 
 # -------------------------------
-# Sección 5: Historial de registros desde MongoDB
+# Sección 5: Historial de registros
 # -------------------------------
 st.header("📊 Historial de registros")
 tabs = st.tabs(["🍽️ Comidas", "🛌 Sueño", "🕘️ Trabajo", "📵 YouTube"])
 
 with tabs[0]:
     comidas = list(col_comidas.find({}, {"_id": 0}))
-    st.dataframe(comidas) if comidas else st.info("Sin registros aún.")
+    if comidas:
+        st.dataframe(comidas)
+    else:
+        st.info("Sin registros aún.")
 
 with tabs[1]:
     suenos = list(col_sueno.find({}, {"_id": 0}))
-    st.dataframe(suenos) if suenos else st.info("Sin registros aún.")
+    if suenos:
+        st.dataframe(suenos)
+    else:
+        st.info("Sin registros aún.")
 
 with tabs[2]:
     trabajos = list(col_trabajo.find({}, {"_id": 0}))
-    st.dataframe(trabajos) if trabajos else st.info("Sin registros aún.")
+    if trabajos:
+        st.dataframe(trabajos)
+    else:
+        st.info("Sin registros aún.")
 
 with tabs[3]:
     abstinencias = list(col_youtube.find({}, {"_id": 0}))
-    st.dataframe(abstinencias) if abstinencias else st.info("Sin registros aún.")
+    if abstinencias:
+        st.dataframe(abstinencias)
+    else:
+        st.info("Sin registros aún.")

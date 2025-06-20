@@ -29,10 +29,6 @@ if 'registro_comidas' not in st.session_state:
     st.session_state.registro_comidas = []
 if 'cronometro_activo' not in st.session_state:
     st.session_state.cronometro_activo = False
-if 'registro_sueno' not in st.session_state:
-    st.session_state.registro_sueno = {}
-if 'registro_trabajo' not in st.session_state:
-    st.session_state.registro_trabajo = {}
 
 # -------------------------------
 # Título principal
@@ -47,7 +43,6 @@ st.header("🍽️ Comidas con cronómetro")
 
 if not st.session_state.cronometro_activo:
     tipo = st.selectbox("Selecciona tipo de comida para iniciar cronómetro:", ["--", "Desayuno", "Almuerzo", "Cena", "Snack", "Break"])
-    
     if tipo != "--":
         st.session_state.inicio = datetime.now(ZONA)
         st.session_state.tipo_comida = tipo
@@ -81,10 +76,6 @@ if st.session_state.cronometro_activo:
         st.session_state.tipo_comida = None
         st.session_state.cronometro_activo = False
 
-if st.session_state.registro_comidas:
-    st.subheader("📋 Historial de comidas de hoy (sesión)")
-    st.table(st.session_state.registro_comidas)
-
 # -------------------------------
 # Sección 2: Registro de sueño
 # -------------------------------
@@ -101,21 +92,17 @@ if st.button("Guardar sueño"):
         t2 += timedelta(days=1)
 
     horas_dormidas = (t2 - t1).total_seconds() / 3600
-    st.session_state.registro_sueno = {
+    registro_sueno = {
         "acostarse": hora_acostarse.strftime('%H:%M'),
         "levantarse": hora_levantarse.strftime('%H:%M'),
         "duracion_horas": round(horas_dormidas, 2),
         "fecha": hoy.strftime('%Y-%m-%d')
     }
 
-    col_sueno.insert_one(st.session_state.registro_sueno)
+    col_sueno.insert_one(registro_sueno)
 
     color = "🟢" if horas_dormidas >= 6 else "🔴"
     st.success(f"{color} Dormiste {horas_dormidas:.1f} horas")
-
-if st.session_state.registro_sueno:
-    st.subheader("📋 Sueño registrado (sesión)")
-    st.json(st.session_state.registro_sueno)
 
 # -------------------------------
 # Sección 3: Puntualidad laboral
@@ -134,7 +121,7 @@ if st.button("Registrar llegada"):
 
     puntual = t_llegada <= t_esperada
     diferencia = (t_llegada - t_esperada).total_seconds() / 60
-    st.session_state.registro_trabajo = {
+    registro_trabajo = {
         "salida": hora_salida.strftime('%H:%M'),
         "llegada": hora_llegada.strftime('%H:%M'),
         "esperada": hora_esperada.strftime('%H:%M'),
@@ -143,16 +130,12 @@ if st.button("Registrar llegada"):
         "fecha": hoy.strftime('%Y-%m-%d')
     }
 
-    col_trabajo.insert_one(st.session_state.registro_trabajo)
+    col_trabajo.insert_one(registro_trabajo)
 
     if puntual:
         st.success("🟢 ¡Llegaste a tiempo!")
     else:
         st.error(f"🔴 Llegaste tarde por {abs(diferencia):.0f} minutos")
-
-if st.session_state.registro_trabajo:
-    st.subheader("📋 Registro de llegada (sesión)")
-    st.json(st.session_state.registro_trabajo)
 
 # -------------------------------
 # Sección 4: Abstinencia de YouTube

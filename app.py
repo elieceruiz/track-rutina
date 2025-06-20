@@ -4,14 +4,12 @@ from pymongo import MongoClient
 from zoneinfo import ZoneInfo
 from streamlit_autorefresh import st_autorefresh
 
+# Refresh automático cada segundo (1000 ms)
+st_autorefresh(interval=1000, limit=None, key="refresh")
+
 ZONA = ZoneInfo("America/Bogota")
 
-# Refresh automático cada 1 segundo (cronómetro en tiempo real)
-st_autorefresh(interval=1000, key="refresh")
-
-# -------------------------------
 # MongoDB connection
-# -------------------------------
 client = MongoClient(st.secrets["mongo_uri"])
 db = client["rutina_vital"]
 col_comidas = db["comidas"]
@@ -19,9 +17,7 @@ col_sueno = db["sueno"]
 col_trabajo = db["trabajo"]
 col_youtube = db["youtube_abstinencia"]
 
-# -------------------------------
-# Session state init
-# -------------------------------
+# Session state initialization
 if 'inicio' not in st.session_state:
     st.session_state.inicio = None
 if 'tipo_comida' not in st.session_state:
@@ -31,20 +27,19 @@ if 'registro_comidas' not in st.session_state:
 if 'cronometro_activo' not in st.session_state:
     st.session_state.cronometro_activo = False
 
-# -------------------------------
-# Main title
-# -------------------------------
+# App title
 st.title("🧠 Rutina Vital")
 st.caption("Hazte consciente de tu tiempo y hábitos")
 
-# -------------------------------
-# Section 1: Meal tracker
-# -------------------------------
+# Section 1 - Meal tracker
 st.header("🍽️ Comidas con cronómetro")
 
 if not st.session_state.cronometro_activo:
-    tipo = st.selectbox("Selecciona tipo de comida para iniciar cronómetro:",
-                        ["--", "Desayuno", "Almuerzo", "Cena", "Snack", "Break"])
+    tipo = st.selectbox(
+        "Selecciona tipo de comida para iniciar cronómetro:",
+        ["--", "Desayuno", "Almuerzo", "Cena", "Snack", "Break"]
+    )
+
     if tipo != "--":
         st.session_state.inicio = datetime.now(ZONA)
         st.session_state.tipo_comida = tipo
@@ -67,23 +62,28 @@ if st.session_state.cronometro_activo:
             "duracion_min": round(duracion, 4),
             "fecha": fin.strftime('%Y-%m-%d')
         }
-        st.session_state.registro_comidas.append(evento)
         col_comidas.insert_one(evento)
+
         st.success(f"{evento['tipo']} finalizado a las {evento['fin']} - Duración: {evento['duracion_min']} minutos")
+
         st.session_state.inicio = None
         st.session_state.tipo_comida = None
         st.session_state.cronometro_activo = False
 
-# -------------------------------
-# Section 2: Sleep tracker
-# -------------------------------
+# Section 2 - Sleep tracking
 st.header("🛌 Registro de sueño")
 
 acostarse_op = st.selectbox("¿Registrar hora de acostarse?", ["--", "Sí"])
 levantarse_op = st.selectbox("¿Registrar hora de levantarse?", ["--", "Sí"])
 
-hora_acostarse = st.time_input("¿A qué hora te acostaste?", key="hora_acostarse") if acostarse_op == "Sí" else None
-hora_levantarse = st.time_input("¿A qué hora te levantaste?", key="hora_levantarse") if levantarse_op == "Sí" else None
+hora_acostarse = None
+hora_levantarse = None
+
+if acostarse_op == "Sí":
+    hora_acostarse = st.time_input("¿A qué hora te acostaste?", key="hora_acostarse")
+
+if levantarse_op == "Sí":
+    hora_levantarse = st.time_input("¿A qué hora te levantaste?", key="hora_levantarse")
 
 if hora_acostarse and hora_levantarse and st.button("Guardar sueño"):
     hoy = datetime.now(ZONA)
@@ -91,6 +91,7 @@ if hora_acostarse and hora_levantarse and st.button("Guardar sueño"):
     t2 = datetime.combine(hoy.date(), hora_levantarse).replace(tzinfo=ZONA)
     if t2 < t1:
         t2 += timedelta(days=1)
+
     horas_dormidas = (t2 - t1).total_seconds() / 3600
     registro_sueno = {
         "acostarse": hora_acostarse.strftime('%H:%M'),
@@ -102,18 +103,26 @@ if hora_acostarse and hora_levantarse and st.button("Guardar sueño"):
     color = "🟢" if horas_dormidas >= 6 else "🔴"
     st.success(f"{color} Dormiste {horas_dormidas:.1f} horas")
 
-# -------------------------------
-# Section 3: Work punctuality
-# -------------------------------
+# Section 3 - Work punctuality
 st.header("🕘️ Llegada al trabajo")
 
 salida_op = st.selectbox("¿Registrar hora de salida de casa?", ["--", "Sí"])
 llegada_op = st.selectbox("¿Registrar hora de llegada al trabajo?", ["--", "Sí"])
 
-hora_salida = st.time_input("¿A qué hora saliste de casa?", key="salida") if salida_op == "Sí" else None
-hora_llegada = st.time_input("¿A qué hora llegaste al trabajo?", key="llegada") if llegada_op == "Sí" else None
-hora_esperada = st.time_input("¿A qué hora debes estar allá normalmente?",
-                              value=datetime.strptime("07:00", "%H:%M").time(), key="esperada")
+hora_salida = None
+hora_llegada = None
+
+if salida_op == "Sí":
+    hora_salida = st.time_input("¿A qué hora saliste de casa?", key="salida")
+
+if llegada_op == "Sí":
+    hora_llegada = st.time_input("¿A qué hora llegaste al trabajo?", key="llegada")
+
+hora_esperada = st.time_input(
+    "¿A qué hora debes estar allá normalmente?",
+    value=datetime.strptime("07:00", "%H:%M").time(),
+    key="esperada"
+)
 
 if hora_salida and hora_llegada and st.button("Registrar llegada"):
     hoy = datetime.now(ZONA)
@@ -132,7 +141,6 @@ if hora_salida and hora_llegada and st.button("Registrar llegada"):
         "diferencia_min": round(diferencia, 1),
         "fecha": hoy.strftime('%Y-%m-%d')
     }
-
     col_trabajo.insert_one(registro_trabajo)
 
     if puntual:
@@ -140,39 +148,48 @@ if hora_salida and hora_llegada and st.button("Registrar llegada"):
     else:
         st.error(f"🔴 Llegaste tarde por {abs(diferencia):.0f} minutos")
 
-# -------------------------------
-# Section 4: YouTube abstinence
-# -------------------------------
+# Section 4 - YouTube Abstinence
 st.header("📵 Abstinencia de YouTube")
 
-if st.checkbox("Tuve ganas de entrar a YouTube y me abstuve", key="abstinencia_check"):
-    if st.button("Registrar abstinencia"):
-        evento = {
-            "fecha": datetime.now(ZONA).strftime('%Y-%m-%d'),
-            "hora": datetime.now(ZONA).strftime('%H:%M:%S'),
-            "mensaje": "Abstinencia registrada"
-        }
-        col_youtube.insert_one(evento)
-        st.success(f"✅ Registrado: {evento['fecha']} a las {evento['hora']}")
+abstinencia = st.checkbox("Tuve ganas de entrar a YouTube y me abstuve")
 
-# -------------------------------
-# Section 5: Historical data
-# -------------------------------
+if abstinencia and st.button("Registrar abstinencia"):
+    evento = {
+        "fecha": datetime.now(ZONA).strftime('%Y-%m-%d'),
+        "hora": datetime.now(ZONA).strftime('%H:%M:%S'),
+        "mensaje": "Abstinencia registrada"
+    }
+    col_youtube.insert_one(evento)
+    st.success(f"✅ Registrado: {evento['fecha']} a las {evento['hora']}")
+
+# Section 5 - Records history
 st.header("📊 Historial de registros")
-tabs = st.tabs(["🍽️ Comidas", "🛌 Sueño", "🕘️ Trabajo", "📵 YouTube"])
+tabs = st.tabs(["🍽️ Meals", "🛌 Sleep", "🕘️ Work", "📵 YouTube"])
 
 with tabs[0]:
     comidas = list(col_comidas.find({}, {"_id": 0}))
-    st.dataframe(comidas) if comidas else st.info("No hay registros aún.")
+    if comidas:
+        st.dataframe(comidas)
+    else:
+        st.info("No hay registros aún.")
 
 with tabs[1]:
     suenos = list(col_sueno.find({}, {"_id": 0}))
-    st.dataframe(suenos) if suenos else st.info("No hay registros aún.")
+    if suenos:
+        st.dataframe(suenos)
+    else:
+        st.info("No hay registros aún.")
 
 with tabs[2]:
     trabajos = list(col_trabajo.find({}, {"_id": 0}))
-    st.dataframe(trabajos) if trabajos else st.info("No hay registros aún.")
+    if trabajos:
+        st.dataframe(trabajos)
+    else:
+        st.info("No hay registros aún.")
 
 with tabs[3]:
     abstinencias = list(col_youtube.find({}, {"_id": 0}))
-    st.dataframe(abstinencias) if abstinencias else st.info("No hay registros aún.")
+    if abstinencias:
+        st.dataframe(abstinencias)
+    else:
+        st.info("No hay registros aún.")

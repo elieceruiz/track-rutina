@@ -1,5 +1,2 @@
 streamlit
-pymongo
-pandas
-pytz
 streamlit-autorefresh

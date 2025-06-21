@@ -41,11 +41,12 @@ if st.session_state.cronometro_activo:
 if not st.session_state.cronometro_activo:
     tipo = st.selectbox("Selecciona tipo de comida para iniciar cronómetro:", ["--", "Desayuno", "Almuerzo", "Cena", "Snack", "Break"])
     if tipo != "--":
-        inicio = datetime.now(ZONA)
-        st.session_state.inicio = inicio
-        st.session_state.tipo_comida = tipo
-        st.session_state.cronometro_activo = True
-        col_comidas.insert_one({"tipo": tipo, "inicio": inicio.strftime('%Y-%m-%d %H:%M:%S'), "fecha": inicio.strftime('%Y-%m-%d'), "en_progreso": True})
+        with st.spinner("Iniciando cronómetro..."):
+            inicio = datetime.now(ZONA)
+            st.session_state.inicio = inicio
+            st.session_state.tipo_comida = tipo
+            st.session_state.cronometro_activo = True
+            col_comidas.insert_one({"tipo": tipo, "inicio": inicio.strftime('%Y-%m-%d %H:%M:%S'), "fecha": inicio.strftime('%Y-%m-%d'), "en_progreso": True})
         st.success(f"{tipo} iniciado a las {inicio.strftime('%H:%M:%S')}")
 
 if st.session_state.cronometro_activo:
@@ -67,6 +68,7 @@ if st.session_state.cronometro_activo:
         )
         if resultado.modified_count > 0:
             st.success(f"{st.session_state.tipo_comida} finalizado a las {fin.strftime('%H:%M:%S')} - Duración: {duracion:.1f} minutos")
+            st.experimental_set_query_params(finalizado="comida")
 
         st.session_state.inicio = None
         st.session_state.tipo_comida = None

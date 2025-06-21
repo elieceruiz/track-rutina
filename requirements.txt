@@ -1,4 +1,4 @@
 streamlit
 pymongo
 pandas
-zoneinfo; python_version>="3.9"
+streamlit-autorefresh

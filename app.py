@@ -20,12 +20,27 @@ coleccion = db["eventos"]
 # Selector de actividad
 actividad = st.selectbox("Selecciona la actividad:", ["Sueño", "Comidas", "Puntualidad"])
 
+# Mostrar si hay algo en curso para esta actividad
+en_curso_actual = None
+if actividad == "Puntualidad":
+    en_curso_actual = coleccion.find_one({"tipo": "puntualidad", "en_curso": True})
+elif actividad == "Comidas":
+    en_curso_actual = coleccion.find_one({"tipo": "comida", "en_curso": True})
+elif actividad == "Sueño":
+    en_curso_actual = coleccion.find_one({"tipo": "sueño", "en_curso": True})
+
+if en_curso_actual:
+    hora_ini = en_curso_actual["inicio"].astimezone(tz).strftime('%H:%M:%S')
+    descripcion = en_curso_actual.get("subtipo", actividad).capitalize()
+    st.warning(f"🔄 Tienes un **{descripcion}** en curso desde las {hora_ini}.")
+
+# Reutilizables
 evento = None
 subtipo = None
 hora_esperada = None
 
 # ------------------------------------------
-# 🍽️ COMIDAS y 💤 SUEÑO (lógica con cronómetro)
+# 🍽️ COMIDAS y 💤 SUEÑO
 # ------------------------------------------
 if actividad in ["Sueño", "Comidas"]:
     if actividad == "Comidas":

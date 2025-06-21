@@ -3,6 +3,7 @@ from datetime import datetime
 from pymongo import MongoClient
 from zoneinfo import ZoneInfo
 import pandas as pd
+from streamlit_autorefresh import st_autorefresh
 
 ZONA = ZoneInfo("America/Bogota")
 
@@ -66,6 +67,7 @@ with tabs[0]:
             st.success("⏱️ Cronómetro iniciado")
 
     if st.session_state.inicio_comida:
+        st_autorefresh(interval=1000, key="refresh_comida")
         mostrar_cronometro(st.session_state.inicio_comida, "🕰️ Tiempo comiendo")
         if st.button("Finalizar comida"):
             fin = datetime.now(ZONA)
@@ -106,6 +108,7 @@ with tabs[1]:
             st.success("😴 Cronómetro de sueño iniciado")
 
     if st.session_state.inicio_sueno:
+        st_autorefresh(interval=1000, key="refresh_sueno")
         mostrar_cronometro(st.session_state.inicio_sueno, "🛌 Duración del sueño")
         if st.button("Finalizar sueño"):
             fin = datetime.now(ZONA)
@@ -145,6 +148,7 @@ with tabs[2]:
             st.success("🏃‍♂️ Salida registrada")
 
     if st.session_state.inicio_trabajo:
+        st_autorefresh(interval=1000, key="refresh_trabajo")
         mostrar_cronometro(st.session_state.inicio_trabajo, "🏁 Tiempo desde salida")
         if st.button("Registrar llegada al trabajo"):
             fin = datetime.now(ZONA)

@@ -1,6 +1,2 @@
 streamlit
 pymongo
-streamlit-autorefresh
-python-dateutil
-tzdata  # Required for zoneinfo support on some systems
-backports.zoneinfo; python_version < "3.9"

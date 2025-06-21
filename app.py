@@ -79,7 +79,7 @@ if actividad in ["Sueño", "Comidas"]:
             st.rerun()
 
 # ------------------------------------------
-# ⏰ PUNTUALIDAD
+# ⏰ PUNTUALIDAD (como desplazamiento)
 # ------------------------------------------
 elif actividad == "Puntualidad":
     evento = coleccion.find_one({"tipo": "puntualidad", "en_curso": True})
@@ -88,49 +88,54 @@ elif actividad == "Puntualidad":
         hora_inicio = evento["inicio"].astimezone(tz)
         segundos_transcurridos = int((datetime.now(tz) - hora_inicio).total_seconds())
 
-        puntualidad = evento.get("puntualidad", "desconocido").capitalize()
         tipo = evento.get("subtipo", "compromiso")
-        esperada = evento.get("hora_esperada")
-
-        st.success(f"{tipo.capitalize()} iniciado a las {hora_inicio.strftime('%H:%M:%S')}")
-        st.info(f"⏱️ Llegaste **{puntualidad}** respecto a la hora esperada: {esperada}")
+        hora_esperada = evento.get("hora_esperada", "00:00")
+        st.success(f"{tipo.capitalize()} — desplazamiento iniciado a las {hora_inicio.strftime('%H:%M:%S')}")
+        st.info(f"Debías llegar a las **{hora_esperada}**")
 
         cronometro = st.empty()
-        stop_button = st.button("⏹️ Finalizar compromiso")
+        stop_button = st.button("⏹️ Finalizar llegada")
 
         for i in range(segundos_transcurridos, segundos_transcurridos + 100000):
             if stop_button:
+                ahora = datetime.now(tz)
+                llegada_real = ahora.time()
+                hora_obj = datetime.strptime(hora_esperada, "%H:%M").time()
+
+                diferencia = (datetime.combine(datetime.today(), llegada_real) -
+                              datetime.combine(datetime.today(), hora_obj)).total_seconds()
+                diferencia_min = round(diferencia / 60)
+                punctuality = "temprano" if diferencia <= 0 else "tarde"
+
                 coleccion.update_one(
                     {"_id": evento["_id"]},
                     {
                         "$set": {
-                            "fin": datetime.now(tz),
-                            "en_curso": False
+                            "fin": ahora,
+                            "en_curso": False,
+                            "puntualidad": punctuality,
+                            "diferencia_min": diferencia_min
                         }
                     }
                 )
-                st.success("✅ Compromiso finalizado.")
+                st.success("✅ Llegada registrada.")
                 st.rerun()
 
             duracion = str(timedelta(seconds=i))
-            cronometro.markdown(f"### 🕒 Duración: {duracion}")
+            cronometro.markdown(f"### 🚶 Duración del desplazamiento: {duracion}")
             time.sleep(1)
 
     else:
-        tipo_compromiso = st.radio("¿Qué tipo de compromiso es?", ["Clase", "Trabajo", "Cita médica", "Cita odontológica", "Otro"])
-        hora_esperada = st.time_input("¿A qué hora deberías haber llegado?")
+        tipo_compromiso = st.radio("¿A dónde te diriges?", ["Clase", "Trabajo", "Cita médica", "Cita odontológica", "Otro"])
+        hora_esperada = st.time_input("¿A qué hora deberías llegar?")
 
-        if st.button("🟢 Registrar llegada"):
+        if st.button("🟢 Iniciar desplazamiento"):
             ahora = datetime.now(tz)
-            llegada = ahora.time()
-            puntualidad = "temprano" if llegada <= hora_esperada else "tarde"
-
             coleccion.insert_one({
                 "tipo": "puntualidad",
                 "subtipo": tipo_compromiso.lower(),
                 "hora_esperada": hora_esperada.strftime("%H:%M"),
                 "inicio": ahora,
-                "puntualidad": puntualidad,
                 "en_curso": True
             })
             st.rerun()
@@ -162,6 +167,7 @@ if historial:
             fila["Compromiso"] = evento.get("subtipo", "desconocido").capitalize()
             fila["Esperada"] = evento.get("hora_esperada", "")
             fila["Puntualidad"] = evento.get("puntualidad", "desconocido").capitalize()
+            fila["Diferencia (min)"] = evento.get("diferencia_min", "")
 
         data.append(fila)
 

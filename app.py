@@ -24,7 +24,11 @@ if "inicio_sueno" not in st.session_state:
     else:
         st.session_state.inicio_sueno = None
 
-# Mostrar cronómetro si hay sueño en curso
+# Bandera para activar cronómetro justo después de iniciar
+if "mostrar_crono" not in st.session_state:
+    st.session_state.mostrar_crono = False
+
+# Cronómetro activo
 if st.session_state.inicio_sueno:
     delta = datetime.now(ZONA) - st.session_state.inicio_sueno
     h, rem = divmod(int(delta.total_seconds()), 3600)
@@ -43,9 +47,11 @@ if st.session_state.inicio_sueno:
             }}
         )
         st.session_state.inicio_sueno = None
+        st.session_state.mostrar_crono = False
         st.success("🌞 Sueño finalizado")
 
-else:
+# Botón de inicio
+if not st.session_state.inicio_sueno:
     if st.button("😴 Iniciar sueño"):
         ahora = datetime.now(ZONA)
         col.insert_one({
@@ -54,7 +60,15 @@ else:
             "en_progreso": True
         })
         st.session_state.inicio_sueno = ahora
+        st.session_state.mostrar_crono = True
         st.success("😴 Sueño iniciado")
+
+# Mostrar cronómetro justo después de iniciar (sin esperar otro clic)
+if st.session_state.mostrar_crono and st.session_state.inicio_sueno:
+    delta = datetime.now(ZONA) - st.session_state.inicio_sueno
+    h, rem = divmod(int(delta.total_seconds()), 3600)
+    m, s = divmod(rem, 60)
+    st.markdown(f"**⏱️ Duración:** {h:02}:{m:02}:{s:02}")
 
 # Historial
 st.subheader("📊 Historial")

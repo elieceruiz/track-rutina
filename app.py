@@ -29,110 +29,180 @@ st.caption("Hazte consciente de tu tiempo y hábitos")
 # Tabs
 secciones = st.tabs(["🍽️ Comidas", "🛌 Sueño", "🏢 Trabajo", "📵 YouTube"])
 
-# (1) COMIDAS
 with secciones[0]:
     st.header("🍽️ Comidas con cronómetro")
 
-    comidas_en_progreso = list(col_comidas.find({"en_progreso": True}))
-    comida_en_progreso = comidas_en_progreso[0] if comidas_en_progreso else None
-
+    comida_en_progreso = col_comidas.find_one({"en_progreso": True, "tipo": {"$in": ["Desayuno", "Almuerzo", "Cena", "Snack", "Break"]}})
     if comida_en_progreso and not st.session_state.cronometro_comida:
-        st.session_state.tipo_comida = comida_en_progreso["tipo"]
-        st.session_state.inicio_comida = datetime.strptime(comida_en_progreso["inicio"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
-        st.session_state.cronometro_comida = True
+        if "inicio" in comida_en_progreso:
+            st.session_state.tipo_comida = comida_en_progreso["tipo"]
+            st.session_state.inicio_comida = datetime.strptime(comida_en_progreso["inicio"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
+            st.session_state.cronometro_comida = True
+
+    with st.container():
+        if st.session_state.cronometro_comida:
+            st_autorefresh(interval=1000, key="cronometro_comida_refresh")
+
+    if not st.session_state.cronometro_comida:
+        tipo = st.selectbox("Selecciona tipo de comida para iniciar cronómetro:", ["--", "Desayuno", "Almuerzo", "Cena", "Snack", "Break"])
+        if tipo != "--":
+            with st.spinner("Iniciando cronómetro..."):
+                inicio = datetime.now(ZONA)
+                st.session_state.inicio_comida = inicio
+                st.session_state.tipo_comida = tipo
+                st.session_state.cronometro_comida = True
+                col_comidas.insert_one({"tipo": tipo, "inicio": inicio.strftime('%Y-%m-%d %H:%M:%S'), "fecha": inicio.strftime('%Y-%m-%d'), "en_progreso": True})
+            st.success(f"{tipo} iniciado a las {inicio.strftime('%H:%M:%S')}")
 
     if st.session_state.cronometro_comida:
-        st_autorefresh(interval=1000, key="cronometro_comida")
-        tiempo = datetime.now(ZONA) - st.session_state.inicio_comida
-        st.markdown(f"**Tiempo transcurrido:** {tiempo}")
+        tiempo_transcurrido = datetime.now(ZONA) - st.session_state.inicio_comida
+        minutos, segundos = divmod(tiempo_transcurrido.seconds, 60)
+        horas, minutos = divmod(minutos, 60)
+        st.markdown(f"🕰️ Tiempo transcurrido: **{horas:02d}:{minutos:02d}:{segundos:02d}**")
+
         if st.button("Finalizar comida"):
             fin = datetime.now(ZONA)
             duracion = (fin - st.session_state.inicio_comida).total_seconds() / 60
-            col_comidas.update_one(
-                {"en_progreso": True},
-                {"$set": {"fin": fin.strftime("%Y-%m-%d %H:%M:%S"), "duracion_min": round(duracion, 2), "en_progreso": False}}
+            resultado = col_comidas.update_one(
+                {"en_progreso": True, "tipo": st.session_state.tipo_comida},
+                {"$set": {
+                    "fin": fin.strftime('%Y-%m-%d %H:%M:%S'),
+                    "duracion_min": round(duracion, 2),
+                    "en_progreso": False
+                }}
             )
-            st.success(f"Comida finalizada. Duró {duracion:.2f} minutos")
-            st.session_state.tipo_comida = None
+            if resultado.modified_count > 0:
+                st.success(f"{st.session_state.tipo_comida} finalizado a las {fin.strftime('%H:%M:%S')} - Duración: {duracion:.1f} minutos")
             st.session_state.inicio_comida = None
+            st.session_state.tipo_comida = None
             st.session_state.cronometro_comida = False
-    else:
-        tipo = st.selectbox("Tipo de comida:", ["--", "Desayuno", "Almuerzo", "Cena", "Snack", "Break"])
-        if tipo != "--":
-            ahora = datetime.now(ZONA)
-            col_comidas.insert_one({"tipo": tipo, "inicio": ahora.strftime("%Y-%m-%d %H:%M:%S"), "fecha": ahora.strftime("%Y-%m-%d"), "en_progreso": True})
-            st.session_state.tipo_comida = tipo
-            st.session_state.inicio_comida = ahora
-            st.session_state.cronometro_comida = True
-            st.experimental_rerun()
 
-# (2) SUEÑO
+    st.subheader("📊 Historial de comidas")
+    comidas = list(col_comidas.find({"en_progreso": False}, {"_id": 0}).sort("inicio", -1))
+    if comidas:
+        st.dataframe(comidas)
+    else:
+        st.info("No hay registros de comidas finalizadas.")
+
 with secciones[1]:
     st.header("🛌 Registro de sueño")
 
     sueno_en_progreso = col_sueno.find_one({"en_progreso": True})
     if sueno_en_progreso and not st.session_state.cronometro_sueno:
-        st.session_state.inicio_sueno = datetime.strptime(sueno_en_progreso["inicio"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
-        st.session_state.cronometro_sueno = True
+        if "inicio" in sueno_en_progreso:
+            st.session_state.inicio_sueno = datetime.strptime(sueno_en_progreso["inicio"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
+            st.session_state.cronometro_sueno = True
+        else:
+            st.warning("El registro de sueño en curso no tiene fecha de inicio. Puedes eliminarlo desde MongoDB.")
+
+    with st.container():
+        if st.session_state.cronometro_sueno:
+            st_autorefresh(interval=1000, key="cronometro_sueno_refresh")
+
+    if not st.session_state.cronometro_sueno:
+        if st.button("Iniciar sueño"):
+            inicio = datetime.now(ZONA)
+            st.session_state.inicio_sueno = inicio
+            st.session_state.cronometro_sueno = True
+            col_sueno.insert_one({"inicio": inicio.strftime('%Y-%m-%d %H:%M:%S'), "fecha": inicio.strftime('%Y-%m-%d'), "en_progreso": True})
+            st.success(f"Sueño iniciado a las {inicio.strftime('%H:%M:%S')}")
 
     if st.session_state.cronometro_sueno:
-        st_autorefresh(interval=1000, key="cronometro_sueno")
-        tiempo = datetime.now(ZONA) - st.session_state.inicio_sueno
-        st.markdown(f"**Duración del sueño:** {tiempo}")
+        tiempo_transcurrido = datetime.now(ZONA) - st.session_state.inicio_sueno
+        minutos, segundos = divmod(tiempo_transcurrido.seconds, 60)
+        horas, minutos = divmod(minutos, 60)
+        st.markdown(f"⏳ Duración del sueño: **{horas:02d}:{minutos:02d}:{segundos:02d}**")
+
         if st.button("Finalizar sueño"):
             fin = datetime.now(ZONA)
             duracion = (fin - st.session_state.inicio_sueno).total_seconds() / 3600
-            col_sueno.update_one({"en_progreso": True}, {"$set": {"fin": fin.strftime("%Y-%m-%d %H:%M:%S"), "duracion_horas": round(duracion, 2), "en_progreso": False}})
-            st.success(f"Dormiste {duracion:.2f} horas")
+            resultado = col_sueno.update_one(
+                {"en_progreso": True},
+                {"$set": {
+                    "fin": fin.strftime('%Y-%m-%d %H:%M:%S'),
+                    "duracion_horas": round(duracion, 2),
+                    "en_progreso": False
+                }}
+            )
+            if resultado.modified_count > 0:
+                st.success(f"🔚 Sueño finalizado a las {fin.strftime('%H:%M:%S')} - Dormiste {duracion:.2f} horas")
             st.session_state.inicio_sueno = None
             st.session_state.cronometro_sueno = False
-    else:
-        if st.button("Iniciar sueño"):
-            ahora = datetime.now(ZONA)
-            col_sueno.insert_one({"inicio": ahora.strftime("%Y-%m-%d %H:%M:%S"), "fecha": ahora.strftime("%Y-%m-%d"), "en_progreso": True})
-            st.session_state.inicio_sueno = ahora
-            st.session_state.cronometro_sueno = True
-            st.experimental_rerun()
 
-# (3) TRABAJO
+    st.subheader("📊 Historial de sueño")
+    suenos = list(col_sueno.find({"en_progreso": False}, {"_id": 0}).sort("inicio", -1))
+    if suenos:
+        st.dataframe(suenos)
+    else:
+        st.info("No hay registros de sueño finalizados.")
+
 with secciones[2]:
     st.header("🏢 Registro de llegada al trabajo")
 
     trabajo_en_progreso = col_trabajo.find_one({"en_progreso": True})
     if trabajo_en_progreso and not st.session_state.cronometro_trabajo:
-        st.session_state.inicio_trabajo = datetime.strptime(trabajo_en_progreso["salida"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
-        st.session_state.cronometro_trabajo = True
+        if "salida" in trabajo_en_progreso:
+            st.session_state.inicio_trabajo = datetime.strptime(trabajo_en_progreso["salida"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
+            st.session_state.cronometro_trabajo = True
+
+    with st.container():
+        if st.session_state.cronometro_trabajo:
+            st_autorefresh(interval=1000, key="cronometro_trabajo_refresh")
+
+    if not st.session_state.cronometro_trabajo:
+        if st.button("Registrar salida de casa"):
+            salida = datetime.now(ZONA)
+            st.session_state.inicio_trabajo = salida
+            st.session_state.cronometro_trabajo = True
+            col_trabajo.insert_one({"salida": salida.strftime('%Y-%m-%d %H:%M:%S'), "fecha": salida.strftime('%Y-%m-%d'), "en_progreso": True})
+            st.success(f"🛎‍♂️ Salida registrada a las {salida.strftime('%H:%M:%S')}")
 
     if st.session_state.cronometro_trabajo:
-        st_autorefresh(interval=1000, key="cronometro_trabajo")
-        tiempo = datetime.now(ZONA) - st.session_state.inicio_trabajo
-        st.markdown(f"**Tiempo desde salida:** {tiempo}")
-        if st.button("Registrar llegada"):
+        tiempo_transcurrido = datetime.now(ZONA) - st.session_state.inicio_trabajo
+        minutos, segundos = divmod(tiempo_transcurrido.seconds, 60)
+        horas, minutos = divmod(minutos, 60)
+        st.markdown(f"🛎‍♂️ Tiempo desde salida: **{horas:02d}:{minutos:02d}:{segundos:02d}**")
+
+        if st.button("Registrar llegada al trabajo"):
             llegada = datetime.now(ZONA)
-            minutos = (llegada - st.session_state.inicio_trabajo).total_seconds() / 60
-            col_trabajo.update_one({"en_progreso": True}, {"$set": {"llegada": llegada.strftime("%Y-%m-%d %H:%M:%S"), "duracion_min": round(minutos, 2), "en_progreso": False}})
-            st.success(f"Trayecto: {minutos:.1f} minutos")
+            diferencia = (llegada - st.session_state.inicio_trabajo).total_seconds() / 60
+            resultado = col_trabajo.update_one(
+                {"en_progreso": True},
+                {"$set": {
+                    "llegada": llegada.strftime('%Y-%m-%d %H:%M:%S'),
+                    "duracion_min": round(diferencia, 2),
+                    "en_progreso": False
+                }}
+            )
+            if resultado.modified_count > 0:
+                st.success(f"🏁 Llegada registrada a las {llegada.strftime('%H:%M:%S')} - Duración: {diferencia:.1f} minutos")
             st.session_state.inicio_trabajo = None
             st.session_state.cronometro_trabajo = False
-    else:
-        if st.button("Registrar salida"):
-            ahora = datetime.now(ZONA)
-            col_trabajo.insert_one({"salida": ahora.strftime("%Y-%m-%d %H:%M:%S"), "fecha": ahora.strftime("%Y-%m-%d"), "en_progreso": True})
-            st.session_state.inicio_trabajo = ahora
-            st.session_state.cronometro_trabajo = True
-            st.experimental_rerun()
 
-# (4) YOUTUBE
+    st.subheader("📊 Historial de trabajo")
+    trabajos = list(col_trabajo.find({"en_progreso": False}, {"_id": 0}).sort("salida", -1))
+    if trabajos:
+        st.dataframe(trabajos)
+    else:
+        st.info("No hay registros de trabajo finalizados.")
+
 with secciones[3]:
     st.header("📵 Abstinencia de YouTube")
-    if st.button("Registrar abstinencia"):
-        ahora = datetime.now(ZONA)
-        col_youtube.insert_one({"fecha": ahora.strftime("%Y-%m-%d"), "hora": ahora.strftime("%H:%M:%S"), "mensaje": "Abstinencia registrada"})
-        st.success("Registrado")
 
-    st.subheader("Historial")
-    data = list(col_youtube.find({}, {"_id": 0}).sort("fecha", -1))
-    if data:
-        st.dataframe(data)
+    abstinencia = st.checkbox("Tuve ganas de entrar a YouTube y me abstuve")
+
+    if abstinencia and st.button("Registrar abstinencia"):
+        evento = {
+            "fecha": datetime.now(ZONA).strftime('%Y-%m-%d'),
+            "hora": datetime.now(ZONA).strftime('%H:%M:%S'),
+            "mensaje": "Abstinencia registrada"
+        }
+        col_youtube.insert_one(evento)
+        st.success(f"✅ Registrado: {evento['fecha']} a las {evento['hora']}")
+
+    st.subheader("📊 Historial de abstinencia")
+    abstinencias = list(col_youtube.find({}, {"_id": 0}).sort("fecha", -1))
+    if abstinencias:
+        st.dataframe(abstinencias)
     else:
-        st.info("No hay registros.")
+        st.info("No hay registros aún.")

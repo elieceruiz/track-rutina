@@ -4,14 +4,14 @@ from datetime import datetime, timedelta
 import pytz
 import time
 
-# Configuración
+# Configuración inicial
 st.set_page_config("Seguimiento de Sueño", layout="centered")
-st.title("Seguimiento de Sueño")
+st.title("🛌 Seguimiento de Sueño")
 
 # Zona horaria
 tz = pytz.timezone("America/Bogota")
 
-# Conexión a MongoDB usando secrets
+# Conexión a MongoDB desde secrets
 MONGO_URI = st.secrets["mongo_uri"]
 client = MongoClient(MONGO_URI)
 db = client["rutina_vital"]
@@ -20,15 +20,15 @@ coleccion = db["eventos"]
 # Buscar evento en curso
 evento = coleccion.find_one({"tipo": "sueño", "en_curso": True})
 
-# Si hay evento en curso
+# Si hay evento activo
 if evento:
     hora_inicio = evento["inicio"].astimezone(tz)
     segundos_transcurridos = int((datetime.now(tz) - hora_inicio).total_seconds())
 
     st.success(f"Sueño iniciado a las {hora_inicio.strftime('%H:%M:%S')}")
-    
+
     cronometro = st.empty()
-    stop_button = st.button("Finalizar Sueño")
+    stop_button = st.button("⏹️ Finalizar Sueño")
 
     for i in range(segundos_transcurridos, segundos_transcurridos + 100000):
         if stop_button:
@@ -41,8 +41,8 @@ if evento:
                     }
                 }
             )
-            st.success("Sueño finalizado.")
-            st.stop()
+            st.success("✅ Sueño finalizado.")
+            st.rerun()
 
         duracion = str(timedelta(seconds=i))
         cronometro.markdown(f"### 🕒 Duración: {duracion}")
@@ -50,10 +50,29 @@ if evento:
 
 # Si no hay evento en curso
 else:
-    if st.button("Iniciar Sueño"):
+    if st.button("🌙 Iniciar Sueño"):
         coleccion.insert_one({
             "tipo": "sueño",
             "inicio": datetime.now(tz),
             "en_curso": True
         })
-        st.experimental_rerun()
+        st.rerun()
+
+# Mostrar historial de eventos finalizados
+st.subheader("📜 Historial de Sueño Finalizado")
+
+historial = list(
+    coleccion.find({"tipo": "sueño", "en_curso": False}).sort("inicio", -1)
+)
+
+if historial:
+    data = []
+    for evento in historial:
+        inicio = evento["inicio"].astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
+        fin = evento["fin"].astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
+        duracion = str(evento["fin"] - evento["inicio"])
+        data.append({"Inicio": inicio, "Fin": fin, "Duración": duracion})
+
+    st.dataframe(data, use_container_width=True)
+else:
+    st.info("No hay registros finalizados.")

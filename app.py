@@ -24,8 +24,18 @@ if 'tipo_comida' not in st.session_state:
     st.session_state.tipo_comida = None
 if 'registro_comidas' not in st.session_state:
     st.session_state.registro_comidas = []
+
+# Verificar si hay una comida "en progreso" en la base de datos al cargar
 if 'cronometro_activo' not in st.session_state:
-    st.session_state.cronometro_activo = False
+    comida_en_progreso = col_comidas.find_one({"en_progreso": True})
+    if comida_en_progreso:
+        st.session_state.tipo_comida = comida_en_progreso["tipo"]
+        st.session_state.inicio = datetime.strptime(
+            comida_en_progreso["inicio"], "%Y-%m-%d %H:%M:%S"
+        ).replace(tzinfo=ZONA)
+        st.session_state.cronometro_activo = True
+    else:
+        st.session_state.cronometro_activo = False
 
 # App title
 st.title("🧠 Rutina Vital")
@@ -34,6 +44,7 @@ st.caption("Hazte consciente de tu tiempo y hábitos")
 # Section 1 - Meal tracker
 st.header("🍽️ Comidas con cronómetro")
 
+# Mostrar selector si no hay cronómetro corriendo
 if not st.session_state.cronometro_activo:
     tipo = st.selectbox(
         "Selecciona tipo de comida para iniciar cronómetro:",
@@ -41,11 +52,22 @@ if not st.session_state.cronometro_activo:
     )
 
     if tipo != "--":
-        st.session_state.inicio = datetime.now(ZONA)
+        inicio = datetime.now(ZONA)
+        st.session_state.inicio = inicio
         st.session_state.tipo_comida = tipo
         st.session_state.cronometro_activo = True
-        st.success(f"{tipo} iniciado a las {st.session_state.inicio.strftime('%H:%M:%S')}")
 
+        # Guardar en Mongo como comida en progreso
+        col_comidas.insert_one({
+            "tipo": tipo,
+            "inicio": inicio.strftime('%Y-%m-%d %H:%M:%S'),
+            "fecha": inicio.strftime('%Y-%m-%d'),
+            "en_progreso": True
+        })
+
+        st.success(f"{tipo} iniciado a las {inicio.strftime('%H:%M:%S')}")
+
+# Mostrar cronómetro si hay uno activo
 if st.session_state.cronometro_activo:
     tiempo_transcurrido = datetime.now(ZONA) - st.session_state.inicio
     minutos, segundos = divmod(tiempo_transcurrido.seconds, 60)
@@ -55,17 +77,28 @@ if st.session_state.cronometro_activo:
     if st.button("Finalizar comida"):
         fin = datetime.now(ZONA)
         duracion = (fin - st.session_state.inicio).total_seconds() / 60
-        evento = {
-            "tipo": st.session_state.tipo_comida,
-            "inicio": st.session_state.inicio.strftime('%H:%M:%S'),
-            "fin": fin.strftime('%H:%M:%S'),
-            "duracion_min": round(duracion, 4),
-            "fecha": fin.strftime('%Y-%m-%d')
-        }
-        col_comidas.insert_one(evento)
 
-        st.success(f"{evento['tipo']} finalizado a las {evento['fin']} - Duración: {evento['duracion_min']} minutos")
+        # Actualizar el mismo documento en Mongo
+        resultado = col_comidas.update_one(
+            {"en_progreso": True, "tipo": st.session_state.tipo_comida},
+            {
+                "$set": {
+                    "fin": fin.strftime('%Y-%m-%d %H:%M:%S'),
+                    "duracion_min": round(duracion, 2),
+                    "en_progreso": False
+                }
+            }
+        )
 
+        if resultado.modified_count > 0:
+            st.success(
+                f"{st.session_state.tipo_comida} finalizado a las {fin.strftime('%H:%M:%S')} "
+                f"- Duración: {duracion:.1f} minutos"
+            )
+        else:
+            st.error("❌ No se pudo actualizar el registro.")
+
+        # Resetear estado
         st.session_state.inicio = None
         st.session_state.tipo_comida = None
         st.session_state.cronometro_activo = False

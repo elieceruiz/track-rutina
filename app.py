@@ -1,22 +1,22 @@
 import streamlit as st
-from datetime import datetime, timedelta
+from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
-st.set_page_config("🛌 Cronómetro de Sueño")
+st.set_page_config("🛌 Sueño Cronómetro Básico")
 
-st.title("🛌 Seguimiento de Sueño (Básico)")
+st.title("🛌 Cronómetro de Sueño")
 
-# Recarga automática si hay sueño activo
-if "inicio_sueno" in st.session_state and st.session_state.inicio_sueno:
-    st_autorefresh(interval=1000, key="refresh_sueno")
+# 1. Si hay un inicio registrado, activa refresco cada 1 segundo
+if st.session_state.get("inicio_sueno"):
+    st_autorefresh(interval=1000, key="auto_refresh")
 
-# Inicializar estado
+# 2. Si no hay registro, crea variables
 if "inicio_sueno" not in st.session_state:
     st.session_state.inicio_sueno = None
 if "duracion_final" not in st.session_state:
     st.session_state.duracion_final = None
 
-# Interfaz
+# 3. Mostrar cronómetro en curso
 if st.session_state.inicio_sueno:
     ahora = datetime.now()
     delta = ahora - st.session_state.inicio_sueno
@@ -27,13 +27,14 @@ if st.session_state.inicio_sueno:
     if st.button("✅ Finalizar sueño"):
         st.session_state.duracion_final = delta
         st.session_state.inicio_sueno = None
-else:
+
+# 4. Mostrar botón de inicio
+elif not st.session_state.duracion_final:
     if st.button("😴 Iniciar sueño"):
         st.session_state.inicio_sueno = datetime.now()
-        st.session_state.duracion_final = None
-        st.success("⏱️ Sueño iniciado")
+        st.rerun()  # ← esto es lo que faltaba: refresca para que el cronómetro empiece YA
 
-# Mostrar resultado final si ya terminó
+# 5. Mostrar resultado final
 if st.session_state.duracion_final:
     d = st.session_state.duracion_final
     h, rem = divmod(int(d.total_seconds()), 3600)

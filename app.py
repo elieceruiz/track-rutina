@@ -5,70 +5,65 @@ import pytz
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 
-# Configuración general
-st.set_page_config(page_title="SueñoTrack", layout="centered")
+# Config
+st.set_page_config("SueñoTrack", layout="centered")
 st.title("🛌 Seguimiento de Sueño")
-colombia = pytz.timezone("America/Bogota")
+ZONA = pytz.timezone("America/Bogota")
 
-# Control de recarga para simular rerun
-if "forzar_refresh" not in st.session_state:
-    st.session_state.forzar_refresh = False
+# Forzar actualización cada segundo solo si hay cronómetro activo
+if "inicio_sueno" in st.session_state and st.session_state.inicio_sueno:
+    st_autorefresh(interval=1000, key="refresh_sueno")
 
-if st.session_state.forzar_refresh:
-    st_autorefresh(interval=1000, key="refresh_sueno", limit=1)
-    st.session_state.forzar_refresh = False
-
-# Conexión a MongoDB
+# Mongo
 client = MongoClient(st.secrets["mongo_uri"])
 db = client["sueno_tracker"]
-coleccion = db["sueno"]
+col = db["sueno"]
 
-# Inicializar estado si no hay sesión cargada
+# Inicializar sesión
 if "inicio_sueno" not in st.session_state:
-    doc = coleccion.find_one({"fin": {"$exists": False}}, sort=[("inicio", -1)])
-    if doc:
-        st.session_state.inicio_sueno = doc["inicio"].astimezone(colombia)
-    else:
-        st.session_state.inicio_sueno = None
+    doc = col.find_one({"fin": {"$exists": False}}, sort=[("inicio", -1)])
+    st.session_state.inicio_sueno = doc["inicio"].astimezone(ZONA) if doc else None
 
-# Mostrar cronómetro si ya está en curso
-if st.session_state.inicio_sueno:
-    ahora = datetime.now(colombia)
-    delta = ahora - st.session_state.inicio_sueno
+# Funciones
+def mostrar_crono(inicio):
+    ahora = datetime.now(ZONA)
+    delta = ahora - inicio
     h, rem = divmod(int(delta.total_seconds()), 3600)
     m, s = divmod(rem, 60)
-    st.markdown(f"**⏱️ Duración del sueño:** {h:02}:{m:02}:{s:02}")
+    st.markdown(f"**🕰️ Tiempo durmiendo:** {h:02}:{m:02}:{s:02}")
+    return ahora, delta
 
+# Interfaz principal
+if st.session_state.inicio_sueno:
+    ahora, delta = mostrar_crono(st.session_state.inicio_sueno)
     if st.button("✅ Finalizar sueño"):
-        coleccion.update_one(
-            {"inicio": st.session_state.inicio_sueno},
+        col.update_one(
+            {"inicio": st.session_state.inicio_sueno.replace(tzinfo=None)},
             {"$set": {
                 "fin": ahora,
                 "duracion_seg": int(delta.total_seconds())
             }}
         )
-        st.success(f"🌞 Sueño finalizado a las {ahora.strftime('%H:%M:%S')}")
         st.session_state.inicio_sueno = None
+        st.success("🌞 Sueño finalizado")
 
-# Botón para iniciar si no hay sueño activo
 else:
     if st.button("😴 Iniciar sueño"):
-        ahora = datetime.now(colombia)
-        coleccion.insert_one({"inicio": ahora})
+        ahora = datetime.now(ZONA)
+        col.insert_one({"inicio": ahora})
         st.session_state.inicio_sueno = ahora
-        st.session_state.forzar_refresh = True
-        st.success(f"😴 Sueño iniciado a las {ahora.strftime('%H:%M:%S')}")
+        st.success("⏱️ Cronómetro iniciado")
 
 # Historial
 st.subheader("📊 Historial")
-registros = list(coleccion.find({"fin": {"$exists": True}}).sort("inicio", -1))
+registros = list(col.find({"fin": {"$exists": True}}).sort("inicio", -1))
 
 if registros:
     df = pd.DataFrame([{
-        "Inicio": r["inicio"].astimezone(colombia).strftime("%Y-%m-%d %H:%M:%S"),
-        "Fin": r["fin"].astimezone(colombia).strftime("%Y-%m-%d %H:%M:%S"),
+        "Inicio": r["inicio"].astimezone(ZONA).strftime("%Y-%m-%d %H:%M:%S"),
+        "Fin": r["fin"].astimezone(ZONA).strftime("%Y-%m-%d %H:%M:%S"),
         "Duración (min)": round(r["duracion_seg"] / 60, 1)
     } for r in registros])
     st.dataframe(df, use_container_width=True, hide_index=True)
 else:
-    st.info("No hay registros todavía.")
+    st.info("No hay registros aún.")

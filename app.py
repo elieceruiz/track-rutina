@@ -24,23 +24,28 @@ actividad = st.selectbox("Selecciona la actividad:", ["Sueño", "Comidas"])
 # 💤 SUEÑO o 🍽️ COMIDAS con misma lógica
 # ------------------------------------------
 
-# Para comidas, se define subtipo
+# Manejo de comidas con subtipo persistente
 subtipo = None
 if actividad == "Comidas":
-    subtipo = st.radio("Tipo de comida:", ["Desayuno", "Almuerzo", "Cena", "Snack"])
-    tipo_busqueda = {"tipo": "comida", "subtipo": subtipo.lower(), "en_curso": True}
+    evento = coleccion.find_one({"tipo": "comida", "en_curso": True})
+    subtipo_opciones = ["Desayuno", "Almuerzo", "Cena", "Snack"]
+
+    if evento:
+        subtipo = evento.get("subtipo", "desconocido").capitalize()
+    else:
+        subtipo = st.radio("Tipo de comida:", subtipo_opciones)
+        evento = None
 else:
-    tipo_busqueda = {"tipo": "sueño", "en_curso": True}
+    evento = coleccion.find_one({"tipo": "sueño", "en_curso": True})
 
-evento = coleccion.find_one(tipo_busqueda)
-
+# Evento activo
 if evento:
     hora_inicio = evento["inicio"].astimezone(tz)
     segundos_transcurridos = int((datetime.now(tz) - hora_inicio).total_seconds())
 
-    texto_activo = f"{actividad} iniciado" if actividad == "Sueño" else f"{subtipo} iniciado"
-    st.success(f"{texto_activo} a las {hora_inicio.strftime('%H:%M:%S')}")
-    
+    nombre_actividad = actividad if actividad == "Sueño" else subtipo
+    st.success(f"{nombre_actividad} iniciado a las {hora_inicio.strftime('%H:%M:%S')}")
+
     cronometro = st.empty()
     stop_button = st.button("⏹️ Finalizar")
 
@@ -62,6 +67,7 @@ if evento:
         cronometro.markdown(f"### 🕒 Duración: {duracion}")
         time.sleep(1)
 
+# Iniciar nuevo evento
 else:
     if st.button("🟢 Iniciar"):
         nuevo_evento = {

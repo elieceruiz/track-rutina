@@ -18,15 +18,22 @@ db = client["rutina_vital"]
 coleccion = db["eventos"]
 
 # Lista de actividades
-actividades_disponibles = ["Sueño", "Comidas", "Puntualidad", "Coding", "Ducha", "Leer"]
+actividades_disponibles = [
+    "Sueño", "Comidas", "Puntualidad", "Coding", "Ducha", "Leer", "Abstinencia"
+]
 
 # Selector principal
 actividad = st.selectbox("Selecciona la actividad:", actividades_disponibles)
 
 # Mapear tipos para Mongo
-tipo_mongo = actividad.lower() if actividad not in ["Comidas", "Puntualidad"] else (
-    "comida" if actividad == "Comidas" else "puntualidad"
-)
+if actividad == "Comidas":
+    tipo_mongo = "comida"
+elif actividad == "Puntualidad":
+    tipo_mongo = "puntualidad"
+elif actividad == "Abstinencia":
+    tipo_mongo = "abstinencia"
+else:
+    tipo_mongo = actividad.lower()
 
 # Mostrar si hay algo en curso
 en_curso_actual = coleccion.find_one({"tipo": tipo_mongo, "en_curso": True})
@@ -155,6 +162,53 @@ elif actividad == "Puntualidad":
             st.rerun()
 
 # ------------------------------------------
+# 🔥 ABSTINENCIA
+# ------------------------------------------
+elif actividad == "Abstinencia":
+    opciones = [
+        "putas Medellín / putas Bello", "LinkedIn", "YouTube", "Apple TV+",
+        "Domino's", "Uber", "Rapicredit", "MONET", "MAGIS"
+    ]
+    evento = coleccion.find_one({"tipo": "abstinencia", "en_curso": True})
+
+    if evento:
+        impulso = evento.get("subtipo", "impulso")
+        hora_inicio = evento["inicio"].astimezone(tz)
+        segundos_transcurridos = int((datetime.now(tz) - hora_inicio).total_seconds())
+
+        st.success(f"🧠 Resistencia activa contra: {impulso}")
+        cronometro = st.empty()
+        stop_button = st.button("⏹️ Finalizar contención")
+
+        for i in range(segundos_transcurridos, segundos_transcurridos + 100000):
+            if stop_button:
+                coleccion.update_one(
+                    {"_id": evento["_id"]},
+                    {
+                        "$set": {
+                            "fin": datetime.now(tz),
+                            "en_curso": False
+                        }
+                    }
+                )
+                st.success("✅ Contención registrada.")
+                st.rerun()
+
+            duracion = str(timedelta(seconds=i))
+            cronometro.markdown(f"### ⏱️ Tiempo resistido: {duracion}")
+            time.sleep(1)
+    else:
+        impulso = st.radio("¿Cuál impulso estás resistiendo?", opciones)
+        if st.button("🟢 Registrar impulso"):
+            coleccion.insert_one({
+                "tipo": "abstinencia",
+                "subtipo": impulso,
+                "inicio": datetime.now(tz),
+                "en_curso": True
+            })
+            st.rerun()
+
+# ------------------------------------------
 # 📜 HISTORIAL
 # ------------------------------------------
 st.subheader(f"📜 Historial de {actividad}")
@@ -181,6 +235,8 @@ if historial:
             fila["Esperada"] = evento.get("hora_esperada", "")
             fila["Puntualidad"] = evento.get("puntualidad", "desconocido").capitalize()
             fila["Diferencia (min)"] = evento.get("diferencia_min", "")
+        elif actividad == "Abstinencia":
+            fila["Impulso"] = evento.get("subtipo", "desconocido")
 
         data.append(fila)
 

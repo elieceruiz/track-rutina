@@ -1,6 +1,6 @@
 import streamlit as st
 from pymongo import MongoClient
-from datetime import datetime, timedelta, time as dtime
+from datetime import datetime, timedelta
 import pytz
 import time
 
@@ -17,28 +17,32 @@ client = MongoClient(MONGO_URI)
 db = client["rutina_vital"]
 coleccion = db["eventos"]
 
-# Selector de actividad
-actividad = st.selectbox("Selecciona la actividad:", ["Sueño", "Comidas", "Puntualidad"])
+# Lista de actividades
+actividades_disponibles = ["Sueño", "Comidas", "Puntualidad", "Coding", "Ducha", "Leer"]
 
-# Traducción al tipo en Mongo
-tipo_mongo = "sueño" if actividad == "Sueño" else "comida" if actividad == "Comidas" else "puntualidad"
+# Selector principal
+actividad = st.selectbox("Selecciona la actividad:", actividades_disponibles)
 
-# Mostrar si hay algo en curso para esta actividad
+# Mapear tipos para Mongo
+tipo_mongo = actividad.lower() if actividad not in ["Comidas", "Puntualidad"] else (
+    "comida" if actividad == "Comidas" else "puntualidad"
+)
+
+# Mostrar si hay algo en curso
 en_curso_actual = coleccion.find_one({"tipo": tipo_mongo, "en_curso": True})
 if en_curso_actual:
     hora_ini = en_curso_actual["inicio"].astimezone(tz).strftime('%H:%M:%S')
     descripcion = en_curso_actual.get("subtipo", actividad).capitalize()
     st.warning(f"🔄 Tienes un **{descripcion}** en curso desde las {hora_ini}.")
 
-# Variables comunes
 evento = None
 subtipo = None
 hora_esperada = None
 
 # ------------------------------------------
-# 🍽️ COMIDAS y 💤 SUEÑO
+# 🍽️ COMIDAS y 💤 SUEÑO y nuevas actividades
 # ------------------------------------------
-if actividad in ["Sueño", "Comidas"]:
+if actividad in ["Sueño", "Comidas", "Coding", "Ducha", "Leer"]:
     if actividad == "Comidas":
         subtipo_opciones = ["Desayuno", "Almuerzo", "Cena", "Snack"]
         evento = coleccion.find_one({"tipo": "comida", "en_curso": True})
@@ -47,13 +51,12 @@ if actividad in ["Sueño", "Comidas"]:
         else:
             subtipo = st.radio("Tipo de comida:", subtipo_opciones)
     else:
-        evento = coleccion.find_one({"tipo": "sueño", "en_curso": True})
+        evento = coleccion.find_one({"tipo": tipo_mongo, "en_curso": True})
 
     if evento:
         hora_inicio = evento["inicio"].astimezone(tz)
         segundos_transcurridos = int((datetime.now(tz) - hora_inicio).total_seconds())
-
-        nombre_activa = actividad if actividad == "Sueño" else subtipo
+        nombre_activa = actividad if actividad != "Comidas" else subtipo
         st.success(f"{nombre_activa} iniciado a las {hora_inicio.strftime('%H:%M:%S')}")
 
         cronometro = st.empty()
@@ -80,7 +83,7 @@ if actividad in ["Sueño", "Comidas"]:
     else:
         if st.button("🟢 Iniciar"):
             nuevo_evento = {
-                "tipo": "comida" if actividad == "Comidas" else "sueño",
+                "tipo": tipo_mongo,
                 "inicio": datetime.now(tz),
                 "en_curso": True
             }
@@ -90,7 +93,7 @@ if actividad in ["Sueño", "Comidas"]:
             st.rerun()
 
 # ------------------------------------------
-# ⏰ PUNTUALIDAD (como desplazamiento)
+# ⏰ PUNTUALIDAD
 # ------------------------------------------
 elif actividad == "Puntualidad":
     evento = coleccion.find_one({"tipo": "puntualidad", "en_curso": True})
@@ -154,7 +157,6 @@ elif actividad == "Puntualidad":
 # ------------------------------------------
 # 📜 HISTORIAL
 # ------------------------------------------
-
 st.subheader(f"📜 Historial de {actividad}")
 
 filtro = {"tipo": tipo_mongo, "en_curso": False}

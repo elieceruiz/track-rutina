@@ -2,6 +2,7 @@ import streamlit as st
 from datetime import datetime, timedelta
 from pymongo import MongoClient
 from zoneinfo import ZoneInfo
+from streamlit_autorefresh import st_autorefresh
 
 ZONA = ZoneInfo("America/Bogota")
 
@@ -33,6 +34,9 @@ if comida_en_progreso:
     st.session_state.tipo_comida = comida_en_progreso["tipo"]
     st.session_state.inicio = datetime.strptime(comida_en_progreso["inicio"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
     st.session_state.cronometro_activo = True
+
+if st.session_state.cronometro_activo:
+    st_autorefresh(interval=1000, key="cronometro_refresh")
 
 if not st.session_state.cronometro_activo:
     tipo = st.selectbox("Selecciona tipo de comida para iniciar cronómetro:", ["--", "Desayuno", "Almuerzo", "Cena", "Snack", "Break"])
@@ -97,14 +101,18 @@ if st.session_state.acostarse_en_curso:
 # Section 3 - Work punctuality
 st.header("🕘️ Llegada al trabajo")
 
-trabajo_en_progreso = col_trabajo.find_one({"en_progreso": True})
-if trabajo_en_progreso:
-    st.session_state.trabajo_en_curso = datetime.strptime(trabajo_en_progreso["salida"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
+registro_trabajo = col_trabajo.find_one({"en_progreso": True})
+if registro_trabajo:
+    st.session_state.trabajo_en_curso = datetime.strptime(registro_trabajo["salida"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
 
 if not st.session_state.trabajo_en_curso:
     if st.button("Registrar hora de salida de casa"):
         ahora = datetime.now(ZONA)
-        col_trabajo.insert_one({"salida": ahora.strftime('%Y-%m-%d %H:%M:%S'), "fecha": ahora.strftime('%Y-%m-%d'), "en_progreso": True})
+        col_trabajo.insert_one({
+            "salida": ahora.strftime('%Y-%m-%d %H:%M:%S'),
+            "fecha": ahora.strftime('%Y-%m-%d'),
+            "en_progreso": True
+        })
         st.session_state.trabajo_en_curso = ahora
         st.success(f"Hora de salida registrada: {ahora.strftime('%H:%M:%S')}")
 
@@ -116,7 +124,16 @@ if st.session_state.trabajo_en_curso:
         t_esperada = datetime.combine(llegada.date(), hora_esperada).replace(tzinfo=ZONA)
         puntual = llegada <= t_esperada
         diferencia = (llegada - t_esperada).total_seconds() / 60
-        resultado = col_trabajo.update_one({"en_progreso": True}, {"$set": {"llegada": llegada.strftime('%Y-%m-%d %H:%M:%S'), "esperada": t_esperada.strftime('%H:%M'), "puntual": puntual, "diferencia_min": round(diferencia, 1), "en_progreso": False}})
+        resultado = col_trabajo.update_one(
+            {"en_progreso": True},
+            {"$set": {
+                "llegada": llegada.strftime('%Y-%m-%d %H:%M:%S'),
+                "esperada": t_esperada.strftime('%H:%M'),
+                "puntual": puntual,
+                "diferencia_min": round(diferencia, 1),
+                "en_progreso": False
+            }}
+        )
         if resultado.modified_count > 0:
             if puntual:
                 st.success("🟢 ¡Llegaste a tiempo!")

@@ -12,7 +12,7 @@ st.title("Seguimiento de Sueño")
 tz = pytz.timezone("America/Bogota")
 
 # Conexión a MongoDB usando secrets
-MONGO_URI = st.secrets["mongo"]["uri"]
+MONGO_URI = st.secrets["mongo_uri"]
 client = MongoClient(MONGO_URI)
 db = client["rutina_vital"]
 coleccion = db["eventos"]

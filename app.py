@@ -8,12 +8,12 @@ from streamlit_autorefresh import st_autorefresh
 # Zona horaria
 ZONA = ZoneInfo("America/Bogota")
 
-# Conexión MongoDB
+# Conexión a MongoDB
 client = MongoClient(st.secrets["mongo_uri"])
-db = client["seguimiento_sueno"]  # ← renombrado para esta App exclusiva
+db = client["seguimiento_sueno"]
 col_sueno = db["sueno"]
 
-# Inicialización del estado de sesión
+# Inicializar estado
 if "inicio_sueno" not in st.session_state:
     st.session_state.inicio_sueno = None
 if "id_sueno_en_curso" not in st.session_state:
@@ -28,11 +28,11 @@ def mostrar_cronometro(inicio):
     m, s = divmod(rem, 60)
     st.markdown(f"**🕒 Duración del sueño:** {h:02}:{m:02}:{s:02}")
 
-# Título de la App
+# Título de la app
 st.title("🛌 Seguimiento de sueño")
 st.caption("Controla en tiempo real cuánto duermes cada noche.")
 
-# Restaurar sesión desde Mongo si hay sueño activo
+# Restaurar estado si hay sueño en curso en Mongo
 en_curso = col_sueno.find_one({"en_progreso": True})
 if en_curso and not st.session_state.inicio_sueno:
     st.session_state.inicio_sueno = datetime.strptime(en_curso["inicio"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
@@ -52,7 +52,7 @@ if not st.session_state.inicio_sueno:
         st.session_state.finalizado = False
         st.success("⏱️ Cronómetro de sueño iniciado")
 
-# Cronómetro activo
+# Mostrar cronómetro si está en curso
 if st.session_state.inicio_sueno and not st.session_state.finalizado:
     st_autorefresh(interval=1000, key="refresh_sueno")
     mostrar_cronometro(st.session_state.inicio_sueno)
@@ -63,29 +63,33 @@ if st.session_state.inicio_sueno and not st.session_state.finalizado:
         duracion_horas = round(duracion_td.total_seconds() / 3600, 2)
         duracion_str = str(timedelta(seconds=int(duracion_td.total_seconds())))
 
-        resultado = col_sueno.update_one(
-            {"_id": st.session_state.id_sueno_en_curso, "en_progreso": True},
-            {"$set": {
-                "fin": fin.strftime("%Y-%m-%d %H:%M:%S"),
-                "duracion_horas": duracion_horas,
-                "duracion_str": duracion_str,
-                "en_progreso": False
-            }}
-        )
-
-        if resultado.modified_count == 1:
-            st.success(f"✅ Sueño finalizado: {duracion_str}")
-            st.session_state.finalizado = True
-            st.session_state.inicio_sueno = None
-            st.session_state.id_sueno_en_curso = None
+        try:
+            resultado = col_sueno.update_one(
+                {"_id": st.session_state.id_sueno_en_curso, "en_progreso": True},
+                {"$set": {
+                    "fin": fin.strftime("%Y-%m-%d %H:%M:%S"),
+                    "duracion_horas": duracion_horas,
+                    "duracion_str": duracion_str,
+                    "en_progreso": False
+                }}
+            )
+        except Exception as e:
+            st.error(f"❌ Error al actualizar en MongoDB: {e}")
         else:
-            st.error("⚠️ No se pudo finalizar. ¿Ya lo habías cerrado antes?")
+            if resultado.modified_count == 1:
+                st.session_state.finalizado = True
+                st.session_state.inicio_sueno = None
+                st.session_state.id_sueno_en_curso = None
+                st.success(f"✅ Sueño finalizado: {duracion_str}")
+                st.experimental_rerun()
+            else:
+                st.error("⚠️ No se encontró sesión activa para finalizar.")
 
-# Mensaje si ya finalizaste
+# Mostrar mensaje si ya se finalizó
 if st.session_state.finalizado:
     st.info("✔️ Tu última sesión fue finalizada correctamente.")
 
-# Historial
+# Historial de sesiones
 st.subheader("📊 Historial de sueño")
 historial = list(col_sueno.find({"en_progreso": False}, {"_id": 0}).sort("inicio", -1))
 if historial:

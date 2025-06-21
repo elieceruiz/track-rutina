@@ -9,14 +9,21 @@ from streamlit_autorefresh import st_autorefresh
 st.set_page_config(page_title="SueñoTrack", layout="centered")
 st.title("🛌 Seguimiento de Sueño")
 colombia = pytz.timezone("America/Bogota")
-st_autorefresh(interval=1000, key="refresh_sueno")
 
-# Conexión MongoDB
+# Control de recarga para simular rerun
+if "forzar_refresh" not in st.session_state:
+    st.session_state.forzar_refresh = False
+
+if st.session_state.forzar_refresh:
+    st_autorefresh(interval=1000, key="refresh_sueno", limit=1)
+    st.session_state.forzar_refresh = False
+
+# Conexión a MongoDB
 client = MongoClient(st.secrets["mongo_uri"])
 db = client["sueno_tracker"]
 coleccion = db["sueno"]
 
-# Inicializar estado
+# Inicializar estado si no hay sesión cargada
 if "inicio_sueno" not in st.session_state:
     doc = coleccion.find_one({"fin": {"$exists": False}}, sort=[("inicio", -1)])
     if doc:
@@ -24,7 +31,7 @@ if "inicio_sueno" not in st.session_state:
     else:
         st.session_state.inicio_sueno = None
 
-# Mostrar cronómetro y botón de finalizar
+# Mostrar cronómetro si ya está en curso
 if st.session_state.inicio_sueno:
     ahora = datetime.now(colombia)
     delta = ahora - st.session_state.inicio_sueno
@@ -40,16 +47,17 @@ if st.session_state.inicio_sueno:
                 "duracion_seg": int(delta.total_seconds())
             }}
         )
-        st.success(f"🌞 Sueño finalizado: {ahora.strftime('%H:%M:%S')}")
+        st.success(f"🌞 Sueño finalizado a las {ahora.strftime('%H:%M:%S')}")
         st.session_state.inicio_sueno = None
 
-# Botón para iniciar
+# Botón para iniciar si no hay sueño activo
 else:
     if st.button("😴 Iniciar sueño"):
         ahora = datetime.now(colombia)
         coleccion.insert_one({"inicio": ahora})
         st.session_state.inicio_sueno = ahora
-        st.success(f"😴 Inicio registrado: {ahora.strftime('%H:%M:%S')}")
+        st.session_state.forzar_refresh = True
+        st.success(f"😴 Sueño iniciado a las {ahora.strftime('%H:%M:%S')}")
 
 # Historial
 st.subheader("📊 Historial")

@@ -70,7 +70,10 @@ if historial:
     for evento in historial:
         inicio = evento["inicio"].astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
         fin = evento["fin"].astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
-        duracion = str(evento["fin"] - evento["inicio"])
+        total_segundos = int((evento["fin"] - evento["inicio"]).total_seconds())
+        horas, resto = divmod(total_segundos, 3600)
+        minutos, segundos = divmod(resto, 60)
+        duracion = f"{horas:02d}h {minutos:02d}m {segundos:02d}s"
         data.append({"Inicio": inicio, "Fin": fin, "Duración": duracion})
 
     st.dataframe(data, use_container_width=True)

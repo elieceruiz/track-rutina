@@ -1,42 +1,59 @@
 import streamlit as st
-from datetime import datetime
-from streamlit_autorefresh import st_autorefresh
+from pymongo import MongoClient
+from datetime import datetime, timedelta
+import pytz
+import time
 
-st.set_page_config("🛌 Sueño Cronómetro Básico")
+# Configuración
+st.set_page_config("Seguimiento de Sueño", layout="centered")
+st.title("Seguimiento de Sueño")
 
-st.title("🛌 Cronómetro de Sueño")
+# Zona horaria
+tz = pytz.timezone("America/Bogota")
 
-# 1. Si hay un inicio registrado, activa refresco cada 1 segundo
-if st.session_state.get("inicio_sueno"):
-    st_autorefresh(interval=1000, key="auto_refresh")
+# Conexión a MongoDB usando secrets
+MONGO_URI = st.secrets["mongo"]["uri"]
+client = MongoClient(MONGO_URI)
+db = client["rutina_vital"]
+coleccion = db["eventos"]
 
-# 2. Si no hay registro, crea variables
-if "inicio_sueno" not in st.session_state:
-    st.session_state.inicio_sueno = None
-if "duracion_final" not in st.session_state:
-    st.session_state.duracion_final = None
+# Buscar evento en curso
+evento = coleccion.find_one({"tipo": "sueño", "en_curso": True})
 
-# 3. Mostrar cronómetro en curso
-if st.session_state.inicio_sueno:
-    ahora = datetime.now()
-    delta = ahora - st.session_state.inicio_sueno
-    h, rem = divmod(int(delta.total_seconds()), 3600)
-    m, s = divmod(rem, 60)
-    st.markdown(f"**🕰️ Tiempo durmiendo:** {h:02}:{m:02}:{s:02}")
+# Si hay evento en curso
+if evento:
+    hora_inicio = evento["inicio"].astimezone(tz)
+    segundos_transcurridos = int((datetime.now(tz) - hora_inicio).total_seconds())
 
-    if st.button("✅ Finalizar sueño"):
-        st.session_state.duracion_final = delta
-        st.session_state.inicio_sueno = None
+    st.success(f"Sueño iniciado a las {hora_inicio.strftime('%H:%M:%S')}")
+    
+    cronometro = st.empty()
+    stop_button = st.button("Finalizar Sueño")
 
-# 4. Mostrar botón de inicio
-elif not st.session_state.duracion_final:
-    if st.button("😴 Iniciar sueño"):
-        st.session_state.inicio_sueno = datetime.now()
-        st.rerun()  # ← esto es lo que faltaba: refresca para que el cronómetro empiece YA
+    for i in range(segundos_transcurridos, segundos_transcurridos + 100000):
+        if stop_button:
+            coleccion.update_one(
+                {"_id": evento["_id"]},
+                {
+                    "$set": {
+                        "fin": datetime.now(tz),
+                        "en_curso": False
+                    }
+                }
+            )
+            st.success("Sueño finalizado.")
+            st.stop()
 
-# 5. Mostrar resultado final
-if st.session_state.duracion_final:
-    d = st.session_state.duracion_final
-    h, rem = divmod(int(d.total_seconds()), 3600)
-    m, s = divmod(rem, 60)
-    st.success(f"🌞 Dormiste: {h} h, {m} min, {s} seg")
+        duracion = str(timedelta(seconds=i))
+        cronometro.markdown(f"### 🕒 Duración: {duracion}")
+        time.sleep(1)
+
+# Si no hay evento en curso
+else:
+    if st.button("Iniciar Sueño"):
+        coleccion.insert_one({
+            "tipo": "sueño",
+            "inicio": datetime.now(tz),
+            "en_curso": True
+        })
+        st.experimental_rerun()

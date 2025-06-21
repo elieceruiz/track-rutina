@@ -86,7 +86,10 @@ with tabs[0]:
 
     st.subheader("📊 Historial")
     historial = list(col_comidas.find({"en_progreso": False}, {"_id": 0}).sort("inicio", -1))
-    st.dataframe(historial) if historial else st.info("No hay registros finalizados.")
+    if historial:
+        st.dataframe(historial)
+    else:
+        st.info("No hay registros finalizados.")
 
 # 🛌 SUEÑO
 with tabs[1]:
@@ -126,7 +129,10 @@ with tabs[1]:
 
     st.subheader("📊 Historial")
     historial = list(col_sueno.find({"en_progreso": False}, {"_id": 0}).sort("inicio", -1))
-    st.dataframe(historial) if historial else st.info("No hay registros finalizados.")
+    if historial:
+        st.dataframe(historial)
+    else:
+        st.info("No hay registros finalizados.")
 
 # 🏢 TRABAJO
 with tabs[2]:
@@ -166,7 +172,10 @@ with tabs[2]:
 
     st.subheader("📊 Historial")
     historial = list(col_trabajo.find({"en_progreso": False}, {"_id": 0}).sort("salida", -1))
-    st.dataframe(historial) if historial else st.info("No hay registros finalizados.")
+    if historial:
+        st.dataframe(historial)
+    else:
+        st.info("No hay registros finalizados.")
 
 # 📵 YouTube
 with tabs[3]:
@@ -183,4 +192,7 @@ with tabs[3]:
 
     st.subheader("📊 Historial")
     eventos = list(col_youtube.find({}, {"_id": 0}).sort("fecha", -1))
-    st.dataframe(eventos) if eventos else st.info("No hay registros aún.")
+    if eventos:
+        st.dataframe(eventos)
+    else:
+        st.info("No hay registros aún.")

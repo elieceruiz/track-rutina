@@ -2,7 +2,6 @@ import streamlit as st
 from datetime import datetime, timedelta
 from pymongo import MongoClient
 from zoneinfo import ZoneInfo
-from streamlit_autorefresh import st_autorefresh
 
 ZONA = ZoneInfo("America/Bogota")
 
@@ -32,16 +31,12 @@ secciones = st.tabs(["🍽️ Comidas", "🛌 Sueño", "🏢 Trabajo", "📵 You
 with secciones[0]:
     st.header("🍽️ Comidas con cronómetro")
 
-    comida_en_progreso = col_comidas.find_one({"en_progreso": True, "tipo": {"$in": ["Desayuno", "Almuerzo", "Cena", "Snack", "Break"]}})
+    comida_en_progreso = col_comidas.find_one({"en_progreso": True})
     if comida_en_progreso and not st.session_state.cronometro_comida:
         if "inicio" in comida_en_progreso:
             st.session_state.tipo_comida = comida_en_progreso["tipo"]
             st.session_state.inicio_comida = datetime.strptime(comida_en_progreso["inicio"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
             st.session_state.cronometro_comida = True
-
-    with st.container():
-        if st.session_state.cronometro_comida:
-            st_autorefresh(interval=1000, key="cronometro_comida_refresh")
 
     if not st.session_state.cronometro_comida:
         tipo = st.selectbox("Selecciona tipo de comida para iniciar cronómetro:", ["--", "Desayuno", "Almuerzo", "Cena", "Snack", "Break"])
@@ -92,12 +87,6 @@ with secciones[1]:
         if "inicio" in sueno_en_progreso:
             st.session_state.inicio_sueno = datetime.strptime(sueno_en_progreso["inicio"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
             st.session_state.cronometro_sueno = True
-        else:
-            st.warning("El registro de sueño en curso no tiene fecha de inicio. Puedes eliminarlo desde MongoDB.")
-
-    with st.container():
-        if st.session_state.cronometro_sueno:
-            st_autorefresh(interval=1000, key="cronometro_sueno_refresh")
 
     if not st.session_state.cronometro_sueno:
         if st.button("Iniciar sueño"):
@@ -137,7 +126,7 @@ with secciones[1]:
         st.info("No hay registros de sueño finalizados.")
 
 with secciones[2]:
-    st.header("🏢 Registro de llegada al trabajo")
+    st.header("🏢 Registro de trabajo")
 
     trabajo_en_progreso = col_trabajo.find_one({"en_progreso": True})
     if trabajo_en_progreso and not st.session_state.cronometro_trabajo:
@@ -145,23 +134,19 @@ with secciones[2]:
             st.session_state.inicio_trabajo = datetime.strptime(trabajo_en_progreso["salida"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
             st.session_state.cronometro_trabajo = True
 
-    with st.container():
-        if st.session_state.cronometro_trabajo:
-            st_autorefresh(interval=1000, key="cronometro_trabajo_refresh")
-
     if not st.session_state.cronometro_trabajo:
         if st.button("Registrar salida de casa"):
             salida = datetime.now(ZONA)
             st.session_state.inicio_trabajo = salida
             st.session_state.cronometro_trabajo = True
             col_trabajo.insert_one({"salida": salida.strftime('%Y-%m-%d %H:%M:%S'), "fecha": salida.strftime('%Y-%m-%d'), "en_progreso": True})
-            st.success(f"🛎‍♂️ Salida registrada a las {salida.strftime('%H:%M:%S')}")
+            st.success(f"🛎️ Salida registrada a las {salida.strftime('%H:%M:%S')}")
 
     if st.session_state.cronometro_trabajo:
         tiempo_transcurrido = datetime.now(ZONA) - st.session_state.inicio_trabajo
         minutos, segundos = divmod(tiempo_transcurrido.seconds, 60)
         horas, minutos = divmod(minutos, 60)
-        st.markdown(f"🛎‍♂️ Tiempo desde salida: **{horas:02d}:{minutos:02d}:{segundos:02d}**")
+        st.markdown(f"🛎️ Tiempo desde salida: **{horas:02d}:{minutos:02d}:{segundos:02d}**")
 
         if st.button("Registrar llegada al trabajo"):
             llegada = datetime.now(ZONA)

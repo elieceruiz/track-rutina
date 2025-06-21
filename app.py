@@ -27,7 +27,7 @@ st.title("🧠 Rutina Vital")
 st.caption("Hazte consciente de tu tiempo y hábitos")
 
 # Tabs
-secciones = st.tabs(["🍽️ Comidas", "🛌 Sueño", "🏢 Trabajo"])
+secciones = st.tabs(["🍽️ Comidas", "🛌 Sueño", "🏢 Trabajo", "📵 YouTube"])
 
 with secciones[0]:
     st.header("🍽️ Comidas con cronómetro")
@@ -88,8 +88,11 @@ with secciones[1]:
 
     sueno_en_progreso = col_sueno.find_one({"en_progreso": True})
     if sueno_en_progreso and not st.session_state.cronometro_sueno:
-        st.session_state.inicio_sueno = datetime.strptime(sueno_en_progreso["inicio"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
-        st.session_state.cronometro_sueno = True
+        try:
+            st.session_state.inicio_sueno = datetime.strptime(sueno_en_progreso["inicio"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
+            st.session_state.cronometro_sueno = True
+        except KeyError:
+            st.warning("Error cargando datos previos de sueño.")
 
     with st.container():
         if st.session_state.cronometro_sueno:
@@ -180,3 +183,24 @@ with secciones[2]:
         st.dataframe(trabajos)
     else:
         st.info("No hay registros de trabajo finalizados.")
+
+with secciones[3]:
+    st.header("📵 Abstinencia de YouTube")
+
+    abstinencia = st.checkbox("Tuve ganas de entrar a YouTube y me abstuve")
+
+    if abstinencia and st.button("Registrar abstinencia"):
+        evento = {
+            "fecha": datetime.now(ZONA).strftime('%Y-%m-%d'),
+            "hora": datetime.now(ZONA).strftime('%H:%M:%S'),
+            "mensaje": "Abstinencia registrada"
+        }
+        col_youtube.insert_one(evento)
+        st.success(f"✅ Registrado: {evento['fecha']} a las {evento['hora']}")
+
+    st.subheader("📊 Historial de abstinencia")
+    abstinencias = list(col_youtube.find({}, {"_id": 0}).sort("fecha", -1))
+    if abstinencias:
+        st.dataframe(abstinencias)
+    else:
+        st.info("No hay registros aún.")

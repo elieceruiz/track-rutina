@@ -49,6 +49,12 @@ if not st.session_state.cronometro_activo:
             col_comidas.insert_one({"tipo": tipo, "inicio": inicio.strftime('%Y-%m-%d %H:%M:%S'), "fecha": inicio.strftime('%Y-%m-%d'), "en_progreso": True})
         st.success(f"{tipo} iniciado a las {inicio.strftime('%H:%M:%S')}")
 
+        # Mostrar cronómetro inmediatamente
+        tiempo_transcurrido = datetime.now(ZONA) - inicio
+        minutos, segundos = divmod(tiempo_transcurrido.seconds, 60)
+        horas, minutos = divmod(minutos, 60)
+        st.markdown(f"🕰️ Tiempo transcurrido: **{horas:02d}:{minutos:02d}:{segundos:02d}**")
+
 if st.session_state.cronometro_activo:
     tiempo_transcurrido = datetime.now(ZONA) - st.session_state.inicio
     minutos, segundos = divmod(tiempo_transcurrido.seconds, 60)

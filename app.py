@@ -79,6 +79,9 @@ sueno_en_progreso = col_sueno.find_one({"en_progreso": True})
 if sueno_en_progreso and not st.session_state.acostarse_en_curso:
     st.session_state.acostarse_en_curso = datetime.strptime(sueno_en_progreso["acostarse"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
 
+if st.session_state.acostarse_en_curso:
+    st_autorefresh(interval=1000, key="cronometro_sueno_refresh")
+
 if not st.session_state.acostarse_en_curso:
     if st.button("Registrar hora de acostarse"):
         ahora = datetime.now(ZONA)
@@ -87,6 +90,11 @@ if not st.session_state.acostarse_en_curso:
         st.success(f"Hora de acostarse registrada: {ahora.strftime('%H:%M:%S')}")
 
 if st.session_state.acostarse_en_curso:
+    tiempo_sueno = datetime.now(ZONA) - st.session_state.acostarse_en_curso
+    horas, rem = divmod(tiempo_sueno.seconds, 3600)
+    minutos, segundos = divmod(rem, 60)
+    st.markdown(f"💤 Dormido durante: **{horas:02d}:{minutos:02d}:{segundos:02d}**")
+
     if st.button("Registrar hora de levantarse"):
         ahora = datetime.now(ZONA)
         t1 = st.session_state.acostarse_en_curso
@@ -105,6 +113,9 @@ trabajo_en_progreso = col_trabajo.find_one({"en_progreso": True})
 if trabajo_en_progreso and not st.session_state.trabajo_en_curso:
     st.session_state.trabajo_en_curso = datetime.strptime(trabajo_en_progreso["salida"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
 
+if st.session_state.trabajo_en_curso:
+    st_autorefresh(interval=1000, key="cronometro_trabajo_refresh")
+
 if not st.session_state.trabajo_en_curso:
     if st.button("Registrar hora de salida de casa"):
         ahora = datetime.now(ZONA)
@@ -117,6 +128,11 @@ if not st.session_state.trabajo_en_curso:
         st.success(f"Hora de salida registrada: {ahora.strftime('%H:%M:%S')}")
 
 if st.session_state.trabajo_en_curso:
+    tiempo_trabajo = datetime.now(ZONA) - st.session_state.trabajo_en_curso
+    horas, rem = divmod(tiempo_trabajo.seconds, 3600)
+    minutos, segundos = divmod(rem, 60)
+    st.markdown(f"🚶‍♂️ Tiempo desde salida: **{horas:02d}:{minutos:02d}:{segundos:02d}**")
+
     hora_esperada = st.time_input("¿A qué hora debes estar allá normalmente?", value=datetime.strptime("07:00", "%H:%M").time(), key="esperada")
     if st.button("Registrar hora de llegada al trabajo"):
         llegada = datetime.now(ZONA)

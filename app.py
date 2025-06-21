@@ -2,7 +2,6 @@ import streamlit as st
 from datetime import datetime, timedelta
 from pymongo import MongoClient
 from zoneinfo import ZoneInfo
-import time
 
 ZONA = ZoneInfo("America/Bogota")
 
@@ -46,31 +45,35 @@ if not st.session_state.cronometro_activo:
         st.success(f"{tipo} iniciado a las {inicio.strftime('%H:%M:%S')}")
 
 if st.session_state.cronometro_activo:
-    tiempo_placeholder = st.empty()
-    stop_placeholder = st.empty()
-    while True:
-        tiempo_transcurrido = datetime.now(ZONA) - st.session_state.inicio
-        minutos, segundos = divmod(tiempo_transcurrido.seconds, 60)
-        horas, minutos = divmod(minutos, 60)
-        tiempo_placeholder.markdown(f"🕰️ Tiempo transcurrido: **{horas:02d}:{minutos:02d}:{segundos:02d}**")
-        if stop_placeholder.button("Finalizar comida"):
-            fin = datetime.now(ZONA)
-            duracion = (fin - st.session_state.inicio).total_seconds() / 60
-            resultado = col_comidas.update_one({"en_progreso": True, "tipo": st.session_state.tipo_comida}, {"$set": {"fin": fin.strftime('%Y-%m-%d %H:%M:%S'), "duracion_min": round(duracion, 2), "en_progreso": False}})
-            if resultado.modified_count > 0:
-                st.success(f"{st.session_state.tipo_comida} finalizado a las {fin.strftime('%H:%M:%S')} - Duración: {duracion:.1f} minutos")
-            st.session_state.inicio = None
-            st.session_state.tipo_comida = None
-            st.session_state.cronometro_activo = False
-            break
-        time.sleep(1)
+    tiempo_transcurrido = datetime.now(ZONA) - st.session_state.inicio
+    minutos, segundos = divmod(tiempo_transcurrido.seconds, 60)
+    horas, minutos = divmod(minutos, 60)
+    st.markdown(f"🕰️ Tiempo transcurrido: **{horas:02d}:{minutos:02d}:{segundos:02d}**")
+
+    if st.button("Finalizar comida"):
+        fin = datetime.now(ZONA)
+        duracion = (fin - st.session_state.inicio).total_seconds() / 60
+        resultado = col_comidas.update_one(
+            {"en_progreso": True, "tipo": st.session_state.tipo_comida},
+            {"$set": {
+                "fin": fin.strftime('%Y-%m-%d %H:%M:%S'),
+                "duracion_min": round(duracion, 2),
+                "en_progreso": False
+            }}
+        )
+        if resultado.modified_count > 0:
+            st.success(f"{st.session_state.tipo_comida} finalizado a las {fin.strftime('%H:%M:%S')} - Duración: {duracion:.1f} minutos")
+
+        st.session_state.inicio = None
+        st.session_state.tipo_comida = None
+        st.session_state.cronometro_activo = False
 
 # Section 2 - Sleep tracking
 st.header("🛌 Registro de sueño")
 
-sueño_en_progreso = col_sueno.find_one({"en_progreso": True})
-if sueño_en_progreso:
-    st.session_state.acostarse_en_curso = datetime.strptime(sueño_en_progreso["acostarse"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
+sueno_en_progreso = col_sueno.find_one({"en_progreso": True})
+if sueno_en_progreso:
+    st.session_state.acostarse_en_curso = datetime.strptime(sueno_en_progreso["acostarse"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
 
 if not st.session_state.acostarse_en_curso:
     if st.button("Registrar hora de acostarse"):
@@ -94,9 +97,9 @@ if st.session_state.acostarse_en_curso:
 # Section 3 - Work punctuality
 st.header("🕘️ Llegada al trabajo")
 
-trabajo_en_curso = col_trabajo.find_one({"en_progreso": True})
-if trabajo_en_curso:
-    st.session_state.trabajo_en_curso = datetime.strptime(trabajo_en_curso["salida"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
+trabajo_en_progreso = col_trabajo.find_one({"en_progreso": True})
+if trabajo_en_progreso:
+    st.session_state.trabajo_en_curso = datetime.strptime(trabajo_en_progreso["salida"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONA)
 
 if not st.session_state.trabajo_en_curso:
     if st.button("Registrar hora de salida de casa"):

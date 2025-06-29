@@ -1,267 +1,238 @@
 import streamlit as st
-from pymongo import MongoClient
-from datetime import datetime, timedelta
+import pymongo
+from PIL import Image
+import io, base64
+from datetime import datetime, timezone, timedelta
 import pytz
 import time
+from streamlit_autorefresh import st_autorefresh
+import getpass
+from bson import ObjectId
 
-# Configuración
-st.set_page_config("Seguimiento Diario", layout="centered")
-st.title("📊 Seguimiento de Actividades")
-
-# Zona horaria
-tz = pytz.timezone("America/Bogota")
-
-# Conexión a MongoDB
+# === CONFIG ===
+st.set_page_config(page_title="🧹 Visualizador de Limpieza", layout="centered")
 MONGO_URI = st.secrets["mongo_uri"]
-client = MongoClient(MONGO_URI)
-db = client["rutina_vital"]
-coleccion = db["eventos"]
+client = pymongo.MongoClient(MONGO_URI)
+db = client.cleanup
+collection = db.entries
+meta = db.meta
+CO = pytz.timezone("America/Bogota")
 
-# Lista de actividades
-actividades_disponibles = [
-    "Sueño", "Comidas", "Puntualidad", "Coding", "Ducha", "Leer", "Abstinencia", "Pagos"
-]
+def resize_image(img, max_width=300):
+    img = img.convert("RGB")
+    w, h = img.size
+    if w > max_width:
+        ratio = max_width / w
+        img = img.resize((int(w * ratio), int(h * ratio)))
+    return img
 
-# Selector principal
-actividad = st.selectbox("Selecciona la actividad:", actividades_disponibles)
+def image_to_base64(img):
+    buffer = io.BytesIO()
+    img.save(buffer, format="JPEG", quality=40, optimize=True)
+    return base64.b64encode(buffer.getvalue()).decode()
 
-# Mapear tipos para Mongo
-if actividad == "Comidas":
-    tipo_mongo = "comida"
-elif actividad == "Puntualidad":
-    tipo_mongo = "puntualidad"
-elif actividad == "Abstinencia":
-    tipo_mongo = "abstinencia"
-elif actividad == "Pagos":
-    tipo_mongo = "pago"
-else:
-    tipo_mongo = actividad.lower()
+def base64_to_image(b64_str):
+    try:
+        img = Image.open(io.BytesIO(base64.b64decode(b64_str)))
+        return img.convert("RGB")
+    except Exception:
+        return Image.new("RGB", (300, 200), color="gray")
 
-# Mostrar si hay algo en curso
-en_curso_actual = coleccion.find_one({"tipo": tipo_mongo, "en_curso": True})
-if en_curso_actual:
-    hora_ini = en_curso_actual["inicio"].astimezone(tz).strftime('%H:%M:%S')
-    descripcion = en_curso_actual.get("subtipo", actividad).capitalize()
-    st.warning(f"🔄 Tienes un **{descripcion}** en curso desde las {hora_ini}.")
+def simple_edge_score(img):
+    grayscale = img.convert("L")
+    pixels = list(grayscale.getdata())
+    diffs = [abs(pixels[i] - pixels[i+1]) for i in range(len(pixels)-1)]
+    return sum(d > 10 for d in diffs)
 
-evento = None
-subtipo = None
-hora_esperada = None
+def format_seconds(seconds):
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:02}:{m:02}:{s:02}"
 
-# ------------------------------------------
-# 🍽️ COMIDAS, 💤 SUEÑO, y actividades básicas
-# ------------------------------------------
-if actividad in ["Sueño", "Comidas", "Coding", "Ducha", "Leer"]:
-    if actividad == "Comidas":
-        subtipo_opciones = ["Desayuno", "Almuerzo", "Cena", "Snack"]
-        evento = coleccion.find_one({"tipo": "comida", "en_curso": True})
-        if evento:
-            subtipo = evento.get("subtipo", "desconocido").capitalize()
+if "user_login" not in st.session_state:
+    st.session_state.user_login = (
+        st.experimental_user.get("username") if hasattr(st, "experimental_user") else getpass.getuser()
+    )
+
+# === SYNC ===
+meta_doc = meta.find_one({}) or {}
+last = collection.find_one(sort=[("start_time", -1)])
+
+tabs = st.tabs(["✨ Sesión Actual", "🗂️ Historial"])
+
+with tabs[0]:
+    st.markdown("<h1 style='text-align:center; color:#2b7a78;'>🧹 Visualizador de Limpieza</h1>", unsafe_allow_html=True)
+    st.divider()
+
+    # INICIO: NO ACTIVA
+    if not last or not last.get("session_active"):
+        st.info("No hay sesión activa. Sube una foto de ANTES para iniciar.")
+        img_file = st.file_uploader("ANTES", type=["jpg", "jpeg", "png"], key="before_new")
+        if img_file:
+            img = Image.open(img_file)
+            resized = resize_image(img)
+            img_b64 = image_to_base64(resized)
+            edges = simple_edge_score(resized)
+            now_utc = datetime.now(timezone.utc)
+            collection.insert_one({
+                "session_active": True,
+                "start_time": now_utc,
+                "image_base64": img_b64,
+                "edges": edges,
+            })
+            meta.update_one(
+                {}, {"$set": {
+                    "last_session_start": now_utc,
+                    "ultimo_pellizco": {
+                        "user": st.session_state.user_login,
+                        "datetime": now_utc,
+                        "mensaje": "Se subió el ANTES"
+                    }
+                }}, upsert=True
+            )
+            st.success("¡Sesión iniciada! Cuando termines, detén el cronómetro.")
+            st.rerun()
+        st.stop()
+
+    # SESIÓN ACTIVA - CRONÓMETRO EN VIVO
+    session_id = last["_id"]
+    img_before = base64_to_image(last.get("image_base64", ""))
+    before_edges = last.get("edges", 0)
+    start_time = last.get("start_time").astimezone(CO)
+    st.success("Sesión activa. Cuando termines, detén el cronómetro.")
+    st.image(img_before, caption="ANTES", width=320)
+    st.markdown(f"**Saturación visual antes:** `{before_edges:,}`")
+
+    cronometro = st.empty()
+    stop_button = st.button("⏹️ Detener cronómetro / Finalizar sesión", type="primary", use_container_width=True)
+
+    # Loop de cronómetro "real", consulta el estado en la base cada ciclo
+    while True:
+        doc = collection.find_one({"_id": session_id})
+        if not doc or not doc.get("session_active", False):
+            st.success("¡Sesión finalizada desde otro dispositivo o ventana!")
+            st.rerun()
+            break
+        start_time = doc["start_time"].astimezone(CO)
+        elapsed = (datetime.now(CO) - start_time).total_seconds()
+        cronometro.markdown(f"⏱️ <b>Tiempo activo:</b> <code>{format_seconds(int(elapsed))}</code>", unsafe_allow_html=True)
+        time.sleep(1)
+        if stop_button:
+            end_time = datetime.now(timezone.utc)
+            duration = int((end_time - doc["start_time"].replace(tzinfo=None)).total_seconds())
+            result = collection.update_one(
+                {"_id": doc["_id"], "session_active": True},
+                {"$set": {
+                    "session_active": False,
+                    "end_time": end_time,
+                    "duration_seconds": duration,
+                    "improved": None
+                }}
+            )
+            meta.update_one(
+                {}, {"$set": {
+                    "ultimo_pellizco": {
+                        "user": st.session_state.user_login,
+                        "datetime": end_time,
+                        "mensaje": "Sesión finalizada, esperando DESPUÉS"
+                    }
+                }}, upsert=True
+            )
+            nuevo = collection.find_one({"_id": doc["_id"]})
+            if result.modified_count == 1 and nuevo.get("session_active") is False:
+                st.success("¡Sesión finalizada! Ahora sube la foto del después cuando quieras.")
+                st.rerun()
+            else:
+                st.error(f"No se pudo finalizar la sesión. session_active en la base: {nuevo.get('session_active')}. session_id: {doc['_id']}")
+                st.stop()
+            break
+
+    # SUBIDA DEL DESPUÉS
+    last = collection.find_one(sort=[("start_time", -1)])
+    if last and not last.get("session_active") and last.get("image_after", None) is None:
+        st.warning("Sesión finalizada. Sube la foto del DESPUÉS para completar el registro.")
+        st.image(base64_to_image(last.get("image_base64", "")), caption="ANTES (guardado)", width=320)
+        img_after_file = st.file_uploader("DESPUÉS", type=["jpg", "jpeg", "png"], key="after", label_visibility="visible")
+        if img_after_file is not None:
+            with st.spinner("Guardando foto del después..."):
+                try:
+                    img_after = Image.open(img_after_file)
+                    resized_after = resize_image(img_after)
+                    img_b64_after = image_to_base64(resized_after)
+                    edges_after = simple_edge_score(resized_after)
+                    improved = False
+                    edges_before = last.get("edges", 0)
+                    if edges_before:
+                        improved = edges_after < edges_before * 0.9
+                    collection.update_one(
+                        {"_id": last["_id"]},
+                        {"$set": {
+                            "image_after": img_b64_after,
+                            "edges_after": edges_after,
+                            "improved": improved
+                        }}
+                    )
+                    meta.update_one(
+                        {}, {"$set": {
+                            "ultimo_pellizco": {
+                                "user": st.session_state.user_login,
+                                "datetime": datetime.now(timezone.utc),
+                                "mensaje": "Se subió el DESPUÉS"
+                            }
+                        }}, upsert=True
+                    )
+                    st.success("¡Foto del después registrada exitosamente!")
+                    st.rerun()
+                except Exception as e:
+                    import traceback
+                    st.error(f"Error al guardar la foto del después: {e}")
+                    st.text(traceback.format_exc())
+        st.info("Cuando subas la foto del después, se completará la sesión en el historial.")
+
+    elif last and not last.get("session_active") and last.get("image_after", None) is not None:
+        st.success("Sesión completada. Puedes ver el resultado en el historial.")
+
+with tabs[1]:
+    st.markdown("<h2 style='color:#2b7a78;'>🗂️ Historial de Sesiones</h2>", unsafe_allow_html=True)
+    registros = list(collection.find({"session_active": False}).sort("start_time", -1).limit(10))
+    for r in registros:
+        ts = r["start_time"].astimezone(CO).strftime("%Y-%m-%d %H:%M:%S")
+        ts_end = r.get("end_time")
+        if isinstance(ts_end, datetime):
+            ts_end = ts_end.astimezone(CO).strftime("%Y-%m-%d %H:%M:%S")
         else:
-            subtipo = st.radio("Tipo de comida:", subtipo_opciones)
-    else:
-        evento = coleccion.find_one({"tipo": tipo_mongo, "en_curso": True})
+            ts_end = "—"
+        dur = r.get("duration_seconds", 0)
+        edges_before = r.get('edges', 0)
+        edges_after = r.get('edges_after', 0)
+        diff = edges_before - edges_after
+        mejora = ""
+        if diff > 0:
+            mejora = f"⬇️ <span style='color:#16a34a;'>-{diff:,}</span>"
+        elif diff < 0:
+            mejora = f"⬆️ <span style='color:#dc2626;'>+{abs(diff):,}</span>"
+        else:
+            mejora = f"= 0"
+        st.markdown(
+            f"🗓️ <b>Inicio:</b> `{ts}` &nbsp; <b>Fin:</b> `{ts_end}` — ⏱️ `{format_seconds(dur)}` — "
+            f"{'✅ Bajó la saturación visual' if r.get('improved') else '❌ Sin cambio visible'}",
+            unsafe_allow_html=True
+        )
+        col1, col2 = st.columns(2, gap="large")
+        with col1:
+            st.image(base64_to_image(r.get("image_base64", "")), caption="ANTES", width=280)
+            st.markdown(f"Saturación: <code>{edges_before:,}</code>", unsafe_allow_html=True)
+        with col2:
+            st.image(base64_to_image(r.get("image_after", "")), caption="DESPUÉS", width=280)
+            st.markdown(f"Saturación: <code>{edges_after:,}</code>", unsafe_allow_html=True)
+        st.markdown(f"<h4 style='text-align:center;'>Diferencia: {mejora}</h4>", unsafe_allow_html=True)
+        st.markdown("---")
 
-    if evento:
-        hora_inicio = evento["inicio"].astimezone(tz)
-        segundos_transcurridos = int((datetime.now(tz) - hora_inicio).total_seconds())
-        nombre_activa = actividad if actividad != "Comidas" else subtipo
-        st.success(f"{nombre_activa} iniciado a las {hora_inicio.strftime('%H:%M:%S')}")
-
-        cronometro = st.empty()
-        stop_button = st.button("⏹️ Finalizar")
-
-        for i in range(segundos_transcurridos, segundos_transcurridos + 100000):
-            if stop_button:
-                coleccion.update_one(
-                    {"_id": evento["_id"]},
-                    {"$set": {"fin": datetime.now(tz), "en_curso": False}}
-                )
-                st.success("✅ Registro finalizado.")
-                st.rerun()
-
-            duracion = str(timedelta(seconds=i))
-            cronometro.markdown(f"### 🕒 Duración: {duracion}")
-            time.sleep(1)
-
-    else:
-        if st.button("🟢 Iniciar"):
-            nuevo_evento = {"tipo": tipo_mongo, "inicio": datetime.now(tz), "en_curso": True}
-            if subtipo:
-                nuevo_evento["subtipo"] = subtipo.lower()
-            coleccion.insert_one(nuevo_evento)
+    with st.expander("🧨 Borrar todos los registros"):
+        st.warning("¡Esta acción eliminará todo el historial! No se puede deshacer.")
+        if st.button("🗑️ Borrar todo", use_container_width=True):
+            now_utc = datetime.now(timezone.utc)
+            collection.delete_many({})
+            meta.update_one({}, {"$set": {"last_reset": now_utc}}, upsert=True)
+            st.success("Registros eliminados.")
             st.rerun()
-
-# ------------------------------------------
-# ⏰ PUNTUALIDAD
-# ------------------------------------------
-elif actividad == "Puntualidad":
-    evento = coleccion.find_one({"tipo": "puntualidad", "en_curso": True})
-
-    if evento:
-        hora_inicio = evento["inicio"].astimezone(tz)
-        segundos_transcurridos = int((datetime.now(tz) - hora_inicio).total_seconds())
-
-        tipo = evento.get("subtipo", "compromiso")
-        hora_esperada = evento.get("hora_esperada", "00:00")
-        st.success(f"{tipo.capitalize()} — desplazamiento iniciado a las {hora_inicio.strftime('%H:%M:%S')}")
-        st.info(f"Debías llegar a las **{hora_esperada}**")
-
-        cronometro = st.empty()
-        stop_button = st.button("⏹️ Finalizar llegada")
-
-        for i in range(segundos_transcurridos, segundos_transcurridos + 100000):
-            if stop_button:
-                ahora = datetime.now(tz)
-                llegada_real = ahora.time()
-                hora_obj = datetime.strptime(hora_esperada, "%H:%M").time()
-
-                diferencia = (datetime.combine(datetime.today(), llegada_real) - datetime.combine(datetime.today(), hora_obj)).total_seconds()
-                diferencia_min = round(diferencia / 60)
-                punctuality = "temprano" if diferencia <= 0 else "tarde"
-
-                coleccion.update_one(
-                    {"_id": evento["_id"]},
-                    {"$set": {
-                        "fin": ahora,
-                        "en_curso": False,
-                        "puntualidad": punctuality,
-                        "diferencia_min": diferencia_min
-                    }}
-                )
-                st.success("✅ Llegada registrada.")
-                st.rerun()
-
-            duracion = str(timedelta(seconds=i))
-            cronometro.markdown(f"### 🚶 Duración del desplazamiento: {duracion}")
-            time.sleep(1)
-
-    else:
-        tipo_compromiso = st.radio("¿A dónde te diriges?", ["Clase", "Trabajo", "Cita médica", "Cita odontológica", "Otro"])
-        hora_esperada = st.time_input("¿A qué hora deberías llegar?")
-
-        if st.button("🟢 Iniciar desplazamiento"):
-            ahora = datetime.now(tz)
-            coleccion.insert_one({
-                "tipo": "puntualidad",
-                "subtipo": tipo_compromiso.lower(),
-                "hora_esperada": hora_esperada.strftime("%H:%M"),
-                "inicio": ahora,
-                "en_curso": True
-            })
-            st.rerun()
-
-# ------------------------------------------
-# 🔥 ABSTINENCIA
-# ------------------------------------------
-elif actividad == "Abstinencia":
-    opciones = [
-        "putas Medellín / putas Bello", "LinkedIn", "YouTube", "Apple TV+",
-        "Domino's", "Uber", "Rapicredit", "MONET", "MAGIS"
-    ]
-    evento = coleccion.find_one({"tipo": "abstinencia", "en_curso": True})
-
-    if evento:
-        impulso = evento.get("subtipo", "impulso")
-        hora_inicio = evento["inicio"].astimezone(tz)
-        segundos_transcurridos = int((datetime.now(tz) - hora_inicio).total_seconds())
-
-        st.success(f"🧠 Resistencia activa contra: {impulso}")
-        cronometro = st.empty()
-        stop_button = st.button("⏹️ Finalizar contención")
-
-        for i in range(segundos_transcurridos, segundos_transcurridos + 100000):
-            if stop_button:
-                coleccion.update_one({"_id": evento["_id"]}, {"$set": {"fin": datetime.now(tz), "en_curso": False}})
-                st.success("✅ Contención registrada.")
-                st.rerun()
-
-            duracion = str(timedelta(seconds=i))
-            cronometro.markdown(f"### ⏱️ Tiempo resistido: {duracion}")
-            time.sleep(1)
-    else:
-        impulso = st.radio("¿Cuál impulso estás resistiendo?", opciones)
-        if st.button("🟢 Registrar impulso"):
-            coleccion.insert_one({
-                "tipo": "abstinencia",
-                "subtipo": impulso,
-                "inicio": datetime.now(tz),
-                "en_curso": True
-            })
-            st.rerun()
-
-# ------------------------------------------
-# 💸 PAGOS
-# ------------------------------------------
-elif actividad == "Pagos":
-    evento = coleccion.find_one({"tipo": "pago", "en_curso": True})
-
-    if evento:
-        descripcion = evento.get("subtipo", "pago")
-        monto = evento.get("monto", 0)
-        hora_inicio = evento["inicio"].astimezone(tz)
-        segundos_transcurridos = int((datetime.now(tz) - hora_inicio).total_seconds())
-
-        st.success(f"💸 Pago en proceso: {descripcion} por ${monto:,}")
-        cronometro = st.empty()
-        stop_button = st.button("⏹️ Finalizar pago")
-
-        for i in range(segundos_transcurridos, segundos_transcurridos + 100000):
-            if stop_button:
-                coleccion.update_one({"_id": evento["_id"]}, {"$set": {"fin": datetime.now(tz), "en_curso": False}})
-                st.success("✅ Pago registrado.")
-                st.rerun()
-            duracion = str(timedelta(seconds=i))
-            cronometro.markdown(f"### ⏱️ Tiempo desde la intención de pago: {duracion}")
-            time.sleep(1)
-    else:
-        motivo = st.text_input("Motivo del pago")
-        monto = st.number_input("Monto en COP", min_value=1, step=1000)
-        if st.button("🟢 Iniciar pago"):
-            coleccion.insert_one({
-                "tipo": "pago",
-                "subtipo": motivo,
-                "monto": monto,
-                "inicio": datetime.now(tz),
-                "en_curso": True
-            })
-            st.rerun()
-
-# ------------------------------------------
-# 📜 HISTORIAL
-# ------------------------------------------
-st.subheader(f"📜 Historial de {actividad}")
-
-filtro = {"tipo": tipo_mongo, "en_curso": False}
-historial = list(coleccion.find(filtro).sort("inicio", -1))
-
-if historial:
-    data = []
-    for evento in historial:
-        inicio = evento["inicio"].astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
-        fin = evento["fin"].astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
-        total_segundos = int((evento["fin"] - evento["inicio"]).total_seconds())
-        horas, resto = divmod(total_segundos, 3600)
-        minutos, segundos = divmod(resto, 60)
-        duracion = f"{horas:02d}h {minutos:02d}m {segundos:02d}s"
-
-        fila = {"Inicio": inicio, "Fin": fin, "Duración": duracion}
-
-        if actividad == "Comidas":
-            fila["Comida"] = evento.get("subtipo", "desconocido").capitalize()
-        elif actividad == "Puntualidad":
-            fila["Compromiso"] = evento.get("subtipo", "desconocido").capitalize()
-            fila["Esperada"] = evento.get("hora_esperada", "")
-            fila["Puntualidad"] = evento.get("puntualidad", "desconocido").capitalize()
-            fila["Diferencia (min)"] = evento.get("diferencia_min", "")
-        elif actividad == "Abstinencia":
-            fila["Impulso"] = evento.get("subtipo", "desconocido")
-        elif actividad == "Pagos":
-            fila["Motivo"] = evento.get("subtipo", "desconocido")
-            fila["Monto"] = evento.get("monto", 0)
-
-        data.append(fila)
-
-    st.dataframe(data, use_container_width=True)
-else:
-    st.info("No hay registros finalizados.")

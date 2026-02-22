@@ -4,8 +4,8 @@ from datetime import datetime, timedelta
 import pytz
 import time
 # === CONFIGURACIÓN GENERAL ===
-st.set_page_config("Seguimiento Diario", layout="centered")
-st.title("📊 Seguimiento de Actividades")
+st.set_page_config("Control Diario", layout="centered")
+st.title("📊 Control Diario")
 # Zona horaria
 tz = pytz.timezone("America/Bogota")
 # Conexión a MongoDB

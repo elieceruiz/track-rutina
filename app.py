@@ -16,7 +16,7 @@ client = MongoClient(MONGO_URI)
 db = client["rutina_vital"]
 coleccion = db["eventos"]
 
-# === MODO (VER / EDITAR) ===
+# === MODO ===
 if "modo" not in st.session_state:
     st.session_state.modo = "ver"
 
@@ -57,7 +57,7 @@ if en_curso_actual:
 evento = None
 subtipo = None
 
-# === BLOQUES PRINCIPALES (NO TOCADOS) ===
+# === BLOQUE 1 ===
 if actividad in ["Sueño", "Comidas", "Coding", "Ducha", "Leer"]:
     if actividad == "Comidas":
         opciones = ["Desayuno", "Almuerzo", "Cena", "Snack"]
@@ -94,52 +94,200 @@ if actividad in ["Sueño", "Comidas", "Coding", "Ducha", "Leer"]:
             coleccion.insert_one(nuevo)
             st.rerun()
 
-# === HISTORIAL UNIFICADO ===
+# === PUNTUALIDAD ===
+elif actividad == "Puntualidad":
+    evento = coleccion.find_one({"tipo": "puntualidad", "en_curso": True})
+
+    if evento:
+        inicio = evento["inicio"].astimezone(tz)
+        segundos = int((datetime.now(tz) - inicio).total_seconds())
+
+        st.success(f"Salida a las {inicio.strftime('%H:%M:%S')}")
+        st.info(f"Llegada esperada: {evento.get('hora_esperada')}")
+
+        cronometro = st.empty()
+        stop = st.button("⏹️ Finalizar llegada")
+
+        for i in range(segundos, segundos + 100000):
+            if stop:
+                ahora = datetime.now(tz)
+                llegada = ahora.time()
+                esperada = datetime.strptime(evento["hora_esperada"], "%H:%M").time()
+
+                diff = (datetime.combine(datetime.today(), llegada) -
+                        datetime.combine(datetime.today(), esperada)).total_seconds()
+
+                coleccion.update_one(
+                    {"_id": evento["_id"]},
+                    {"$set": {
+                        "fin": ahora,
+                        "en_curso": False,
+                        "puntualidad": "temprano" if diff <= 0 else "tarde",
+                        "diferencia_min": round(diff / 60)
+                    }}
+                )
+
+                st.success("✅ Registrado")
+                st.rerun()
+
+            cronometro.markdown(f"### 🚶 {str(timedelta(seconds=i))}")
+            time.sleep(1)
+
+    else:
+        tipo = st.radio("Destino:", ["Clase", "Trabajo", "Cita médica", "Otro"])
+        hora = st.time_input("Hora esperada")
+
+        if st.button("🟢 Iniciar"):
+            coleccion.insert_one({
+                "tipo": "puntualidad",
+                "subtipo": tipo.lower(),
+                "hora_esperada": hora.strftime("%H:%M"),
+                "inicio": datetime.now(tz),
+                "en_curso": True
+            })
+            st.rerun()
+
+# === ABSTINENCIA ===
+elif actividad == "Abstinencia":
+    opciones = ["LinkedIn", "YouTube", "Apple TV+", "Uber", "Domino's", "Otros"]
+
+    evento = coleccion.find_one({"tipo": "abstinencia", "en_curso": True})
+
+    if evento:
+        inicio = evento["inicio"].astimezone(tz)
+        segundos = int((datetime.now(tz) - inicio).total_seconds())
+
+        st.success(f"Resistiendo: {evento.get('subtipo')}")
+
+        cronometro = st.empty()
+        stop = st.button("⏹️ Finalizar")
+
+        for i in range(segundos, segundos + 100000):
+            if stop:
+                coleccion.update_one(
+                    {"_id": evento["_id"]},
+                    {"$set": {"fin": datetime.now(tz), "en_curso": False}}
+                )
+                st.success("✅ Registrado")
+                st.rerun()
+
+            cronometro.markdown(f"### ⏱️ {str(timedelta(seconds=i))}")
+            time.sleep(1)
+
+    else:
+        impulso = st.radio("Impulso:", opciones)
+        if st.button("🟢 Registrar"):
+            coleccion.insert_one({
+                "tipo": "abstinencia",
+                "subtipo": impulso,
+                "inicio": datetime.now(tz),
+                "en_curso": True
+            })
+            st.rerun()
+
+# === PAGOS ===
+elif actividad == "Pagos":
+    evento = coleccion.find_one({"tipo": "pago", "en_curso": True})
+
+    if evento:
+        inicio = evento["inicio"].astimezone(tz)
+        segundos = int((datetime.now(tz) - inicio).total_seconds())
+
+        st.success(f"${evento.get('monto'):,} — {evento.get('subtipo')}")
+
+        cronometro = st.empty()
+        stop = st.button("⏹️ Finalizar")
+
+        for i in range(segundos, segundos + 100000):
+            if stop:
+                coleccion.update_one(
+                    {"_id": evento["_id"]},
+                    {"$set": {"fin": datetime.now(tz), "en_curso": False}}
+                )
+                st.success("✅ Registrado")
+                st.rerun()
+
+            cronometro.markdown(f"### ⏱️ {str(timedelta(seconds=i))}")
+            time.sleep(1)
+
+    else:
+        motivo = st.text_input("Motivo")
+        monto = st.number_input("Monto", min_value=1)
+
+        if st.button("🟢 Iniciar"):
+            coleccion.insert_one({
+                "tipo": "pago",
+                "subtipo": motivo,
+                "monto": monto,
+                "inicio": datetime.now(tz),
+                "en_curso": True
+            })
+            st.rerun()
+
+# === HISTORIAL ===
 st.subheader(f"📜 Historial de {actividad}")
 
 historial = list(coleccion.find({"tipo": tipo_mongo, "en_curso": False}).sort("inicio", -1))
 
 if historial:
-    for e in historial:
 
-        inicio = e["inicio"].astimezone(tz)
-        fin = e["fin"].astimezone(tz)
-        duracion = str(timedelta(seconds=int((e["fin"] - e["inicio"]).total_seconds())))
+    if not modo_edicion:
+        # 🟢 TABLA
+        data = []
+        for e in historial:
+            inicio = e["inicio"].astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
+            fin = e["fin"].astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
 
-        col1, col2 = st.columns([1, 5])
+            total = int((e["fin"] - e["inicio"]).total_seconds())
+            h, r = divmod(total, 3600)
+            m, s = divmod(r, 60)
 
-        # 🔴 SOLO SI MODO EDICIÓN
-        with col1:
-            if modo_edicion:
+            fila = {
+                "Inicio": inicio,
+                "Fin": fin,
+                "Duración": f"{h:02d}h {m:02d}m {s:02d}s"
+            }
+
+            if actividad == "Comidas":
+                fila["Comida"] = e.get("subtipo","")
+            elif actividad == "Puntualidad":
+                fila["Compromiso"] = e.get("subtipo","")
+                fila["Esperada"] = e.get("hora_esperada","")
+                fila["Puntualidad"] = e.get("puntualidad","")
+                fila["Dif (min)"] = e.get("diferencia_min","")
+            elif actividad == "Abstinencia":
+                fila["Impulso"] = e.get("subtipo","")
+            elif actividad == "Pagos":
+                fila["Motivo"] = e.get("subtipo","")
+                fila["Monto"] = e.get("monto",0)
+
+            data.append(fila)
+
+        st.dataframe(data, use_container_width=True)
+
+    else:
+        # 🔴 EDICIÓN
+        for e in historial:
+
+            inicio = e["inicio"].astimezone(tz)
+            fin = e["fin"].astimezone(tz)
+            duracion = str(timedelta(seconds=int((e["fin"] - e["inicio"]).total_seconds())))
+
+            col1, col2 = st.columns([1,5])
+
+            with col1:
                 if st.button("✖", key=f"del_{e['_id']}"):
                     coleccion.delete_one({"_id": ObjectId(e["_id"])})
                     st.rerun()
-            else:
-                st.write("")
 
-        # 🧾 CONTENIDO
-        with col2:
-            st.markdown(f"""
-            **Inicio:** {inicio.strftime('%Y-%m-%d %H:%M:%S')}  
-            **Fin:** {fin.strftime('%Y-%m-%d %H:%M:%S')}  
-            **Duración:** {duracion}  
-            """)
-
-            if actividad == "Comidas":
-                st.markdown(f"**Comida:** {e.get('subtipo','')}")
-            elif actividad == "Puntualidad":
+            with col2:
                 st.markdown(f"""
-                **Compromiso:** {e.get('subtipo','')}  
-                **Esperada:** {e.get('hora_esperada','')}  
-                **Puntualidad:** {e.get('puntualidad','')}  
-                **Diferencia:** {e.get('diferencia_min','')} min
+                **Inicio:** {inicio.strftime('%Y-%m-%d %H:%M:%S')}  
+                **Fin:** {fin.strftime('%Y-%m-%d %H:%M:%S')}  
+                **Duración:** {duracion}  
                 """)
-            elif actividad == "Abstinencia":
-                st.markdown(f"**Impulso:** {e.get('subtipo','')}")
-            elif actividad == "Pagos":
-                st.markdown(f"**Monto:** ${e.get('monto',0):,} — {e.get('subtipo','')}")
 
-        st.divider()
+            st.divider()
 
 else:
     st.info("No hay registros.")

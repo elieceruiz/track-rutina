@@ -16,21 +16,6 @@ client = MongoClient(MONGO_URI)
 db = client["rutina_vital"]
 coleccion = db["eventos"]
 
-# === FUNCIÓN DE FORMATO EN ESPAÑOL ===
-def formato_tiempo(segundos):
-    dias, resto = divmod(segundos, 86400)
-    horas, resto = divmod(resto, 3600)
-    minutos, segundos = divmod(resto, 60)
-    partes = []
-    if dias > 0:
-        partes.append(f"{dias} día{'s' if dias != 1 else ''}")
-    if horas > 0:
-        partes.append(f"{horas}h")
-    if minutos > 0:
-        partes.append(f"{minutos}m")
-    partes.append(f"{segundos}s")
-    return " ".join(partes)
-
 # === MODO ===
 if "modo" not in st.session_state:
     st.session_state.modo = "ver"
@@ -98,7 +83,7 @@ if actividad in ["Sueño", "Comidas", "Coding", "Ducha", "Leer"]:
                 st.success("✅ Finalizado")
                 st.rerun()
 
-            cronometro.markdown(f"### 🕒 {formato_tiempo(i)}")
+            cronometro.markdown(f"### 🕒 {str(timedelta(seconds=i))}")
             time.sleep(1)
 
     else:
@@ -145,7 +130,7 @@ elif actividad == "Puntualidad":
                 st.success("✅ Registrado")
                 st.rerun()
 
-            cronometro.markdown(f"### 🚶 {formato_tiempo(i)}")
+            cronometro.markdown(f"### 🚶 {str(timedelta(seconds=i))}")
             time.sleep(1)
 
     else:
@@ -186,7 +171,7 @@ elif actividad == "Abstinencia":
                 st.success("✅ Registrado")
                 st.rerun()
 
-            cronometro.markdown(f"### ⏱️ {formato_tiempo(i)}")
+            cronometro.markdown(f"### ⏱️ {str(timedelta(seconds=i))}")
             time.sleep(1)
 
     else:
@@ -222,7 +207,7 @@ elif actividad == "Pagos":
                 st.success("✅ Registrado")
                 st.rerun()
 
-            cronometro.markdown(f"### ⏱️ {formato_tiempo(i)}")
+            cronometro.markdown(f"### ⏱️ {str(timedelta(seconds=i))}")
             time.sleep(1)
 
     else:
@@ -234,4 +219,75 @@ elif actividad == "Pagos":
                 "tipo": "pago",
                 "subtipo": motivo,
                 "monto": monto,
-                "inicio
+                "inicio": datetime.now(tz),
+                "en_curso": True
+            })
+            st.rerun()
+
+# === HISTORIAL ===
+st.subheader(f"📜 Historial de {actividad}")
+
+historial = list(coleccion.find({"tipo": tipo_mongo, "en_curso": False}).sort("inicio", -1))
+
+if historial:
+
+    if not modo_edicion:
+        # 🟢 TABLA
+        data = []
+        for e in historial:
+            inicio = e["inicio"].astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
+            fin = e["fin"].astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
+
+            total = int((e["fin"] - e["inicio"]).total_seconds())
+            h, r = divmod(total, 3600)
+            m, s = divmod(r, 60)
+
+            fila = {
+                "Inicio": inicio,
+                "Fin": fin,
+                "Duración": f"{h:02d}h {m:02d}m {s:02d}s"
+            }
+
+            if actividad == "Comidas":
+                fila["Comida"] = e.get("subtipo","")
+            elif actividad == "Puntualidad":
+                fila["Compromiso"] = e.get("subtipo","")
+                fila["Esperada"] = e.get("hora_esperada","")
+                fila["Puntualidad"] = e.get("puntualidad","")
+                fila["Dif (min)"] = e.get("diferencia_min","")
+            elif actividad == "Abstinencia":
+                fila["Impulso"] = e.get("subtipo","")
+            elif actividad == "Pagos":
+                fila["Motivo"] = e.get("subtipo","")
+                fila["Monto"] = e.get("monto",0)
+
+            data.append(fila)
+
+        st.dataframe(data, use_container_width=True)
+
+    else:
+        # 🔴 EDICIÓN
+        for e in historial:
+
+            inicio = e["inicio"].astimezone(tz)
+            fin = e["fin"].astimezone(tz)
+            duracion = str(timedelta(seconds=int((e["fin"] - e["inicio"]).total_seconds())))
+
+            col1, col2 = st.columns([1,5])
+
+            with col1:
+                if st.button("✖", key=f"del_{e['_id']}"):
+                    coleccion.delete_one({"_id": ObjectId(e["_id"])})
+                    st.rerun()
+
+            with col2:
+                st.markdown(f"""
+                **Inicio:** {inicio.strftime('%Y-%m-%d %H:%M:%S')}  
+                **Fin:** {fin.strftime('%Y-%m-%d %H:%M:%S')}  
+                **Duración:** {duracion}  
+                """)
+
+            st.divider()
+
+else:
+    st.info("No hay registros.")
